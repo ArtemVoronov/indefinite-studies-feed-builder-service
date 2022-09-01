@@ -1,0 +1,9 @@
+.gradle
+.idea/*
+.vscode/*
+build
+config/*
+!migrations
+.env*
+coverage.out
+configs/tls

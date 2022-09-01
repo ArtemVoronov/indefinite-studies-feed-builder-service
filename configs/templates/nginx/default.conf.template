@@ -1,0 +1,14 @@
+upstream feed-builder-service-loadbalancer {
+    server ${HOST_API}:3011;
+    server ${HOST_API}:3012;
+}
+
+server {
+    listen       80;
+    listen  [::]:80;
+    server_name  localhost;
+
+    location / {
+        proxy_pass http://feed-builder-service-loadbalancer;
+    }
+}
