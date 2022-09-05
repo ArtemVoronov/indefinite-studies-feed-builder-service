@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
+	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/queries"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/feed"
 	"google.golang.org/grpc"
@@ -29,7 +30,6 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 
 	params := toCreateFeedPostParams(in, result.Login)
 
-	// TODO: add and update local cache
 	err = services.Instance().DB().TxVoid(func(tx *sql.Tx, ctx context.Context, cancel context.CancelFunc) error {
 		err := queries.CreateFeedPost(tx, ctx, params)
 		return err
@@ -37,6 +37,8 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 	if err != nil {
 		return nil, err
 	}
+
+	services.Instance().FeedCache().AddPost(*toFeedPostCreate(in, result.Login))
 
 	return &feed.CreatePostReply{}, nil
 }
@@ -50,7 +52,6 @@ func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.Upda
 
 	params := toUpdateFeedPostParams(in, result.Login)
 
-	// TODO: add and update local cache
 	err = services.Instance().DB().TxVoid(func(tx *sql.Tx, ctx context.Context, cancel context.CancelFunc) error {
 		err := queries.UpdateFeedPost(tx, ctx, params)
 		return err
@@ -58,6 +59,8 @@ func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.Upda
 	if err != nil {
 		return nil, err
 	}
+
+	services.Instance().FeedCache().UpdatePost(*toFeedPostUpdate(in, result.Login))
 
 	return &feed.UpdatePostReply{}, nil
 }
@@ -71,6 +74,8 @@ func (s *FeedBuilderServiceServer) DeletePost(ctx context.Context, in *feed.Dele
 		return nil, err
 	}
 
+	services.Instance().FeedCache().DeletePost(int(in.GetId()))
+
 	return &feed.DeletePostReply{}, nil
 }
 
@@ -83,7 +88,6 @@ func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.C
 
 	params := toCreateFeedCommentParams(in, result.Login)
 
-	// TODO: add and update local cache
 	err = services.Instance().DB().TxVoid(func(tx *sql.Tx, ctx context.Context, cancel context.CancelFunc) error {
 		err := queries.CreateFeedComment(tx, ctx, params)
 		return err
@@ -91,6 +95,8 @@ func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.C
 	if err != nil {
 		return nil, err
 	}
+
+	services.Instance().FeedCache().AddComment(*toFeedCommentCreate(in, result.Login))
 
 	return &feed.CreateCommentReply{}, nil
 }
@@ -104,7 +110,6 @@ func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.U
 
 	params := toUpdateFeedCommentParams(in, result.Login)
 
-	// TODO: add and update local cache
 	err = services.Instance().DB().TxVoid(func(tx *sql.Tx, ctx context.Context, cancel context.CancelFunc) error {
 		err := queries.UpdateFeedComment(tx, ctx, params)
 		return err
@@ -113,17 +118,21 @@ func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.U
 		return nil, err
 	}
 
+	services.Instance().FeedCache().UpdateComment(*toFeedCommentUpdate(in, result.Login))
+
 	return &feed.UpdateCommentReply{}, nil
 }
 
 func (s *FeedBuilderServiceServer) DeleteComment(ctx context.Context, in *feed.DeleteCommentRequest) (*feed.DeleteCommentReply, error) {
 	err := services.Instance().DB().TxVoid(func(tx *sql.Tx, ctx context.Context, cancel context.CancelFunc) error {
-		err := queries.DeleteFeedComment(tx, ctx, int(in.GetId()))
+		err := queries.DeleteFeedComment(tx, ctx, int(in.GetCommentId()))
 		return err
 	})()
 	if err != nil {
 		return nil, err
 	}
+
+	services.Instance().FeedCache().DeleteComment(int(in.GetPostId()), int(in.GetCommentId()))
 
 	return &feed.DeleteCommentReply{}, nil
 }
@@ -160,8 +169,8 @@ func toCreateFeedCommentParams(comment *feed.CreateCommentRequest, authorName st
 	return &queries.CreateFeedCommentParams{
 		AuthorId:        comment.AuthorId,
 		AuthorName:      authorName,
-		PostId:          comment.Id,
-		LinkedCommentId: comment.LinkedCommentId,
+		PostId:          comment.PostId,
+		LinkedCommentId: toLinkedCommentIdPrt(comment.LinkedCommentId),
 		CommentId:       comment.Id,
 		CommentText:     comment.Text,
 		CommentState:    comment.State,
@@ -172,10 +181,74 @@ func toUpdateFeedCommentParams(comment *feed.UpdateCommentRequest, authorName st
 	return &queries.UpdateFeedCommentParams{
 		AuthorId:        comment.AuthorId,
 		AuthorName:      authorName,
-		PostId:          comment.Id,
-		LinkedCommentId: comment.LinkedCommentId,
+		PostId:          comment.PostId,
+		LinkedCommentId: toLinkedCommentIdPrt(comment.LinkedCommentId),
 		CommentId:       comment.Id,
 		CommentText:     comment.Text,
 		CommentState:    comment.State,
 	}
+}
+
+func toFeedPostCreate(post *feed.CreatePostRequest, authorName string) *entities.FeedPost {
+	return &entities.FeedPost{
+		AuthorId:        int(post.AuthorId),
+		AuthorName:      authorName,
+		PostId:          int(post.Id),
+		PostText:        post.Text,
+		PostPreviewText: post.PreviewText,
+		PostTopic:       post.Topic,
+		PostState:       post.State,
+		CreateDate:      post.CreateDate.AsTime(),
+		LastUpdateDate:  post.LastUpdateDate.AsTime(),
+	}
+}
+
+func toFeedPostUpdate(post *feed.UpdatePostRequest, authorName string) *entities.FeedPost {
+	return &entities.FeedPost{
+		AuthorId:        int(post.AuthorId),
+		AuthorName:      authorName,
+		PostId:          int(post.Id),
+		PostText:        post.Text,
+		PostPreviewText: post.PreviewText,
+		PostTopic:       post.Topic,
+		PostState:       post.State,
+		CreateDate:      post.CreateDate.AsTime(),
+		LastUpdateDate:  post.LastUpdateDate.AsTime(),
+	}
+}
+
+func toFeedCommentCreate(comment *feed.CreateCommentRequest, authorName string) *entities.FeedComment {
+	return &entities.FeedComment{
+		AuthorId:        int(comment.AuthorId),
+		AuthorName:      authorName,
+		PostId:          int(comment.PostId),
+		LinkedCommentId: toLinkedCommentIdPrt(comment.LinkedCommentId),
+		CommentId:       int(comment.Id),
+		CommentText:     comment.Text,
+		CommentState:    comment.State,
+		CreateDate:      comment.CreateDate.AsTime(),
+		LastUpdateDate:  comment.LastUpdateDate.AsTime(),
+	}
+}
+
+func toFeedCommentUpdate(comment *feed.UpdateCommentRequest, authorName string) *entities.FeedComment {
+	return &entities.FeedComment{
+		AuthorId:        int(comment.AuthorId),
+		AuthorName:      authorName,
+		PostId:          int(comment.PostId),
+		LinkedCommentId: toLinkedCommentIdPrt(comment.LinkedCommentId),
+		CommentId:       int(comment.Id),
+		CommentText:     comment.Text,
+		CommentState:    comment.State,
+		CreateDate:      comment.CreateDate.AsTime(),
+		LastUpdateDate:  comment.LastUpdateDate.AsTime(),
+	}
+}
+
+func toLinkedCommentIdPrt(val int32) *int {
+	if val == 0 {
+		return nil
+	}
+	result := int(val)
+	return &result
 }

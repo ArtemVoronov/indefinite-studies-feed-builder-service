@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/grpc/v1/feed"
+	feedGrpcApi "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/grpc/v1/feed"
+	feedRestApi "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/rest/v1/feed"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/rest/v1/ping"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
@@ -53,13 +54,15 @@ func createRestApi() *gin.Engine {
 	{
 		authorized.GET("/feed/debug/vars", expvar.Handler())
 		authorized.GET("/feed/safe-ping", ping.SafePing)
+
+		authorized.GET("/feed/", feedRestApi.GetFeed)
 	}
 
 	return router
 }
 
 func createGrpcApi(s *grpc.Server) {
-	feed.RegisterServiceServer(s)
+	feedGrpcApi.RegisterServiceServer(s)
 }
 
 func authenicate(token string) (*auth.VerificationResult, error) {

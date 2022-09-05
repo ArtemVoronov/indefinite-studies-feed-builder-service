@@ -1,6 +1,6 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20220902113702-2e7d63b8d4e7 h1:v0DcmZdOXQ0OLtw1797gwq4TeXyuCRdBQ1yUNyqMUP4=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20220902113702-2e7d63b8d4e7/go.mod h1:InCIsIpEemGZG4u7U3qTE1yIisfjshziCj/Vtd4N1yI=
+github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20220905180540-a36d3f220d76 h1:r2NnMJgInvd1NVCg0tf3dIRhx87mGir1Z3DKnWvg61A=
+github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20220905180540-a36d3f220d76/go.mod h1:InCIsIpEemGZG4u7U3qTE1yIisfjshziCj/Vtd4N1yI=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=

@@ -4,6 +4,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/cache"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db"
@@ -12,9 +13,10 @@ import (
 )
 
 type Services struct {
-	profiles *profiles.ProfilesGRPCService
-	auth     *auth.AuthGRPCService
-	db       *db.PostgreSQLService
+	profiles  *profiles.ProfilesGRPCService
+	auth      *auth.AuthGRPCService
+	db        *db.PostgreSQLService
+	feedCache *cache.FeedCache
 }
 
 var once sync.Once
@@ -40,9 +42,10 @@ func createServices() *Services {
 	}
 
 	return &Services{
-		profiles: profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilescreds),
-		auth:     auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authcreds),
-		db:       db.CreatePostgreSQLService(),
+		profiles:  profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilescreds),
+		auth:      auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authcreds),
+		db:        db.CreatePostgreSQLService(),
+		feedCache: cache.CreateFeedCache(),
 	}
 }
 
@@ -50,6 +53,7 @@ func (s *Services) Shutdown() {
 	s.profiles.Shutdown()
 	s.auth.Shutdown()
 	s.db.Shutdown()
+	s.feedCache.Shutdown()
 }
 
 func (s *Services) DB() *db.PostgreSQLService {
@@ -62,4 +66,8 @@ func (s *Services) Auth() *auth.AuthGRPCService {
 
 func (s *Services) Profiles() *profiles.ProfilesGRPCService {
 	return s.profiles
+}
+
+func (s *Services) FeedCache() *cache.FeedCache {
+	return s.feedCache
 }
