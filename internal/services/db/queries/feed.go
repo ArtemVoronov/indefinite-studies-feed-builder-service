@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 )
 
 // TODO: implement update and delete user ops
@@ -40,8 +41,6 @@ type CreateFeedCommentParams struct {
 	AuthorName      interface{}
 	PostId          interface{}
 	LinkedCommentId interface{}
-	CreateDate      interface{}
-	LastUpdateDate  interface{}
 }
 
 type UpdateFeedCommentParams struct {
@@ -52,8 +51,6 @@ type UpdateFeedCommentParams struct {
 	AuthorName      interface{}
 	PostId          interface{}
 	LinkedCommentId interface{}
-	CreateDate      interface{}
-	LastUpdateDate  interface{}
 }
 
 const (
@@ -68,15 +65,14 @@ const (
 		post_state = COALESCE($5, post_state),
 		author_id = COALESCE($6, author_id),
 		author_name = COALESCE($7, author_name),
-		create_date = COALESCE($8, create_date),
-		last_update_date = COALESCE($9, last_update_date),
+		last_update_date = $8,
 	WHERE post_id = $1`
 
 	DELETE_POST_QUERY = `DELETE FROM feed_posts WHERE post_id = $1`
 
 	CREATE_COMMENT_QUERY = `INSERT INTO feed_comments
 		(comment_id, comment_text, comment_state, author_id, author_name, post_id, linked_comment_id, create_date, last_update_date) 
-		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $)`
+		VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 	UPDATE_COMMENT_QUERY = `UPDATE feed_comments
 		SET comment_text = COALESCE($2, comment_text),
@@ -85,20 +81,24 @@ const (
 		author_name = COALESCE($5, author_name),
 		post_id = COALESCE($6, post_id),
 		linked_comment_id = COALESCE($7, linked_comment_id),
-		create_date = COALESCE($8, create_date),
-		last_update_date = COALESCE($9, last_update_date),
+		last_update_date = $8,
 	WHERE comment_id = $1`
 
 	DELETE_COMMENT_QUERY = `DELETE FROM feed_comments WHERE comment_id = $1`
 )
 
 func CreateFeedPost(tx *sql.Tx, ctx context.Context, params *CreateFeedPostParams) error {
+	createDate := time.Now()
+	lastUpdateDate := time.Now()
 	stmt, err := tx.PrepareContext(ctx, CREATE_POST_QUERY)
 	if err != nil {
 		return fmt.Errorf("error at creating feed post, case after preparing statement: %s", err)
 	}
 
-	_, err = stmt.ExecContext(ctx, params.PostId, params.PostText, params.PostPreviewText, params.PostTopic, params.PostState, params.AuthorId, params.AuthorName, params.CreateDate, params.LastUpdateDate)
+	_, err = stmt.ExecContext(ctx,
+		params.PostId, params.PostText, params.PostPreviewText, params.PostTopic, params.PostState,
+		params.AuthorId, params.AuthorName,
+		createDate, lastUpdateDate)
 	if err != nil {
 		return fmt.Errorf("error at creating feed post, case after ExecContext: %s", err)
 	}
@@ -107,11 +107,15 @@ func CreateFeedPost(tx *sql.Tx, ctx context.Context, params *CreateFeedPostParam
 }
 
 func UpdateFeedPost(tx *sql.Tx, ctx context.Context, params *UpdateFeedPostParams) error {
+	lastUpdateDate := time.Now()
 	stmt, err := tx.PrepareContext(ctx, UPDATE_POST_QUERY)
 	if err != nil {
 		return fmt.Errorf("error at updating feed post, case after preparing statement: %s", err)
 	}
-	res, err := stmt.ExecContext(ctx, params.PostId, params.PostText, params.PostPreviewText, params.PostTopic, params.PostState, params.AuthorId, params.AuthorName, params.CreateDate, params.LastUpdateDate)
+	res, err := stmt.ExecContext(ctx,
+		params.PostId, params.PostText, params.PostPreviewText, params.PostTopic, params.PostState,
+		params.AuthorId, params.AuthorName,
+		lastUpdateDate)
 	if err != nil {
 		return fmt.Errorf("error at updating feed post (%v), case after executing statement: %s", params, err)
 	}
@@ -147,12 +151,18 @@ func DeleteFeedPost(tx *sql.Tx, ctx context.Context, id int) error {
 }
 
 func CreateFeedComment(tx *sql.Tx, ctx context.Context, params *CreateFeedCommentParams) error {
+	createDate := time.Now()
+	lastUpdateDate := time.Now()
 	stmt, err := tx.PrepareContext(ctx, CREATE_COMMENT_QUERY)
 	if err != nil {
 		return fmt.Errorf("error at creating feed comment, case after preparing statement: %s", err)
 	}
 
-	_, err = stmt.ExecContext(ctx, params.CommentId, params.CommentText, params.CommentState, params.AuthorId, params.AuthorId, params.AuthorName, params.PostId, params.LinkedCommentId, params.CreateDate, params.LastUpdateDate)
+	_, err = stmt.ExecContext(ctx,
+		params.CommentId, params.CommentText, params.CommentState,
+		params.AuthorId, params.AuthorName,
+		params.PostId, params.LinkedCommentId,
+		createDate, lastUpdateDate)
 	if err != nil {
 		return fmt.Errorf("error at creating feed comment, case after ExecContext: %s", err)
 	}
@@ -161,11 +171,16 @@ func CreateFeedComment(tx *sql.Tx, ctx context.Context, params *CreateFeedCommen
 }
 
 func UpdateFeedComment(tx *sql.Tx, ctx context.Context, params *UpdateFeedCommentParams) error {
+	lastUpdateDate := time.Now()
 	stmt, err := tx.PrepareContext(ctx, UPDATE_COMMENT_QUERY)
 	if err != nil {
 		return fmt.Errorf("error at updating feed comment, case after preparing statement: %s", err)
 	}
-	res, err := stmt.ExecContext(ctx, params.CommentId, params.CommentText, params.CommentState, params.AuthorId, params.AuthorId, params.AuthorName, params.PostId, params.LinkedCommentId, params.CreateDate, params.LastUpdateDate)
+	res, err := stmt.ExecContext(ctx,
+		params.CommentId, params.CommentText, params.CommentState,
+		params.AuthorId, params.AuthorName,
+		params.PostId, params.LinkedCommentId,
+		lastUpdateDate)
 	if err != nil {
 		return fmt.Errorf("error at updating feed comment (%v), case after executing statement: %s", params, err)
 	}

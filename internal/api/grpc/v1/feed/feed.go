@@ -165,8 +165,6 @@ func toCreateFeedCommentParams(comment *feed.CreateCommentRequest, authorName st
 		CommentId:       comment.Id,
 		CommentText:     comment.Text,
 		CommentState:    comment.State,
-		CreateDate:      comment.CreateDate,
-		LastUpdateDate:  comment.LastUpdateDate,
 	}
 }
 
@@ -179,7 +177,5 @@ func toUpdateFeedCommentParams(comment *feed.UpdateCommentRequest, authorName st
 		CommentId:       comment.Id,
 		CommentText:     comment.Text,
 		CommentState:    comment.State,
-		CreateDate:      comment.CreateDate,
-		LastUpdateDate:  comment.LastUpdateDate,
 	}
 }
