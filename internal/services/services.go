@@ -7,12 +7,14 @@ import (
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 )
 
 type Services struct {
-	auth *auth.AuthGRPCService
-	db   *db.PostgreSQLService
+	profiles *profiles.ProfilesGRPCService
+	auth     *auth.AuthGRPCService
+	db       *db.PostgreSQLService
 }
 
 var once sync.Once
@@ -28,18 +30,24 @@ func Instance() *Services {
 }
 
 func createServices() *Services {
-	creds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("AUTH_SERVICE_CLIENT_TLS_CERT_PATH"))
+	authcreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("AUTH_SERVICE_CLIENT_TLS_CERT_PATH"))
+	if err != nil {
+		log.Fatalf("unable to load TLS credentials")
+	}
+	profilescreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("PROFILES_SERVICE_CLIENT_TLS_CERT_PATH"))
 	if err != nil {
 		log.Fatalf("unable to load TLS credentials")
 	}
 
 	return &Services{
-		auth: auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &creds),
-		db:   db.CreatePostgreSQLService(),
+		profiles: profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilescreds),
+		auth:     auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authcreds),
+		db:       db.CreatePostgreSQLService(),
 	}
 }
 
 func (s *Services) Shutdown() {
+	s.profiles.Shutdown()
 	s.auth.Shutdown()
 	s.db.Shutdown()
 }
@@ -50,4 +58,8 @@ func (s *Services) DB() *db.PostgreSQLService {
 
 func (s *Services) Auth() *auth.AuthGRPCService {
 	return s.auth
+}
+
+func (s *Services) Profiles() *profiles.ProfilesGRPCService {
+	return s.profiles
 }

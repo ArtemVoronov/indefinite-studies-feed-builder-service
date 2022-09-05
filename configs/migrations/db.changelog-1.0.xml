@@ -9,18 +9,9 @@
         http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/pro http://www.liquibase.org/xml/ns/pro/liquibase-pro-4.3.xsd">
 
     <changeSet  id="1"  author="voronov">
-        <createTable tableName="feed">
-            <column name="id" type="int" autoIncrement="true">
-                <constraints primaryKey="true" nullable="false"/>
-            </column>
-            <column name="author_id" type="int">
-                <constraints nullable="false"/>
-            </column>
-            <column name="author_name" type="varchar(256)">
-                <constraints nullable="false"/>
-            </column>
+        <createTable tableName="feed_posts">
             <column name="post_id" type="int">
-                <constraints nullable="false"/>
+                <constraints primaryKey="true" nullable="false"/>
             </column>
             <column name="post_text" type="text">
                 <constraints nullable="false"/>
@@ -31,9 +22,15 @@
             <column name="post_topic" type="varchar(512)">
                 <constraints nullable="false"/>
             </column>
-            <column name="state" type="varchar(256)">
+            <column name="post_state" type="varchar(256)">
                 <constraints nullable="false"/>
             </column>
+            <column name="author_id" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="author_name" type="varchar(256)">
+                <constraints nullable="false"/>
+            </column>            
             <column name="create_date" type="timestamp">
                 <constraints nullable="false"/>
             </column>
@@ -41,9 +38,15 @@
                 <constraints nullable="false"/>
             </column>
         </createTable>
-        <createTable tableName="comments">
-            <column name="id" type="int" autoIncrement="true">
+        <createTable tableName="feed_comments">
+            <column name="comment_id" type="int">
                 <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="comment_text" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="comment_state" type="varchar(256)">
+                <constraints nullable="false"/>
             </column>
             <column name="author_id" type="int">
                 <constraints nullable="false"/>
@@ -54,13 +57,7 @@
             <column name="post_id" type="int">
                 <constraints nullable="false"/>
             </column>
-            <column name="text" type="text">
-                <constraints nullable="false"/>
-            </column>
             <column name="linked_comment_id" type="int">
-            </column>
-            <column name="state" type="varchar(256)">
-                <constraints nullable="false"/>
             </column>
             <column name="create_date" type="timestamp">
                 <constraints nullable="false"/>

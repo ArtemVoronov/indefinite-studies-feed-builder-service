@@ -4,23 +4,31 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/grpc/v1/feed"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/rest/v1/ping"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
 	"github.com/gin-contrib/expvar"
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
 )
 
 func Start() {
 	app.LoadEnv()
+	creds := app.TLSCredentials()
+	go func() {
+		app.StartGRPC(setup, shutdown, app.HostGRPC(), createGrpcApi, &creds)
+	}()
 	app.StartHTTP(setup, shutdown, app.HostHTTP(), createRestApi())
 }
 
 func setup() {
+	services.Instance()
 }
 
 func shutdown() {
+	services.Instance().Shutdown()
 }
 
 func createRestApi() *gin.Engine {
@@ -48,6 +56,10 @@ func createRestApi() *gin.Engine {
 	}
 
 	return router
+}
+
+func createGrpcApi(s *grpc.Server) {
+	feed.RegisterServiceServer(s)
 }
 
 func authenicate(token string) (*auth.VerificationResult, error) {
