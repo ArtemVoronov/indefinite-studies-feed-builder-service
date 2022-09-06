@@ -48,14 +48,13 @@ func createRestApi() *gin.Engine {
 	v1 := router.Group("/api/v1")
 
 	v1.GET("/feed/ping", ping.Ping)
+	v1.GET("/feed/", feedRestApi.GetFeed)
 
 	authorized := router.Group("/api/v1")
 	authorized.Use(app.AuthReqired(authenicate))
 	{
 		authorized.GET("/feed/debug/vars", expvar.Handler())
 		authorized.GET("/feed/safe-ping", ping.SafePing)
-
-		authorized.GET("/feed/", feedRestApi.GetFeed)
 	}
 
 	return router

@@ -9,13 +9,16 @@ import (
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/redis"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 )
 
+// TODO: delete postgres
 type Services struct {
 	profiles  *profiles.ProfilesGRPCService
 	auth      *auth.AuthGRPCService
 	db        *db.PostgreSQLService
+	redis     *redis.RedisService
 	feedCache *cache.FeedCache
 }
 
@@ -45,6 +48,7 @@ func createServices() *Services {
 		profiles:  profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilescreds),
 		auth:      auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authcreds),
 		db:        db.CreatePostgreSQLService(),
+		redis:     redis.CreateRedisService(),
 		feedCache: cache.CreateFeedCache(),
 	}
 }
@@ -54,6 +58,7 @@ func (s *Services) Shutdown() {
 	s.auth.Shutdown()
 	s.db.Shutdown()
 	s.feedCache.Shutdown()
+	s.redis.Shutdown()
 }
 
 func (s *Services) DB() *db.PostgreSQLService {
@@ -70,4 +75,8 @@ func (s *Services) Profiles() *profiles.ProfilesGRPCService {
 
 func (s *Services) FeedCache() *cache.FeedCache {
 	return s.feedCache
+}
+
+func (s *Services) Redis() *redis.RedisService {
+	return s.redis
 }

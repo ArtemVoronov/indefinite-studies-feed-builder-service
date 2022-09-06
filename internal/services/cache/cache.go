@@ -7,8 +7,7 @@ import (
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
 )
 
-// TODO: add loading from DB
-// TODO: too many entities, DTO for the same object, check it and fix if needs
+// TODO: remove, use redis
 
 type FeedEntry struct {
 	Post     entities.FeedPost
@@ -36,6 +35,7 @@ func (cache *FeedCache) Get(from, to int) []FeedEntry {
 	cache.rwm.RLock()
 	defer cache.rwm.RUnlock()
 
+	to = min(to, len(cache.feed))
 	result := make([]FeedEntry, 0, abs(to-from))
 
 	posts := cache.feed[from:to]
@@ -135,4 +135,11 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+func min(x, y int) int {
+	if x < y {
+		return x
+	}
+	return y
 }
