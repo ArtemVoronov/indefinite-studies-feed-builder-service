@@ -101,7 +101,7 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 			return err
 		}
 		err = cli.ZAdd(ctx, REDIS_FEED_KEY, &redis.Z{
-			Score:  float64(post.CreateDate.Unix()),
+			Score:  float64(post.CreateDate.Unix() * -1),
 			Member: post.PostId,
 		}).Err()
 		return err
