@@ -49,6 +49,7 @@ func createRestApi() *gin.Engine {
 
 	v1.GET("/feed/ping", ping.Ping)
 	v1.GET("/feed/", feedRestApi.GetFeed)
+	v1.GET("/feed/:id", feedRestApi.GetPost)
 
 	authorized := router.Group("/api/v1")
 	authorized.Use(app.AuthReqired(authenicate))

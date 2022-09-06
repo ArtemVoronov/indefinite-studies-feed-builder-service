@@ -4,22 +4,17 @@ import (
 	"log"
 	"sync"
 
-	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/cache"
+	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
-	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
-	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/redis"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 )
 
-// TODO: delete postgres
 type Services struct {
-	profiles  *profiles.ProfilesGRPCService
-	auth      *auth.AuthGRPCService
-	db        *db.PostgreSQLService
-	redis     *redis.RedisService
-	feedCache *cache.FeedCache
+	profiles *profiles.ProfilesGRPCService
+	auth     *auth.AuthGRPCService
+	feed     *feed.FeedService
 }
 
 var once sync.Once
@@ -45,24 +40,16 @@ func createServices() *Services {
 	}
 
 	return &Services{
-		profiles:  profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilescreds),
-		auth:      auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authcreds),
-		db:        db.CreatePostgreSQLService(),
-		redis:     redis.CreateRedisService(),
-		feedCache: cache.CreateFeedCache(),
+		profiles: profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilescreds),
+		auth:     auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authcreds),
+		feed:     feed.CreateFeedService(),
 	}
 }
 
 func (s *Services) Shutdown() {
 	s.profiles.Shutdown()
 	s.auth.Shutdown()
-	s.db.Shutdown()
-	s.feedCache.Shutdown()
-	s.redis.Shutdown()
-}
-
-func (s *Services) DB() *db.PostgreSQLService {
-	return s.db
+	s.feed.Shutdown()
 }
 
 func (s *Services) Auth() *auth.AuthGRPCService {
@@ -73,10 +60,6 @@ func (s *Services) Profiles() *profiles.ProfilesGRPCService {
 	return s.profiles
 }
 
-func (s *Services) FeedCache() *cache.FeedCache {
-	return s.feedCache
-}
-
-func (s *Services) Redis() *redis.RedisService {
-	return s.redis
+func (s *Services) Feed() *feed.FeedService {
+	return s.feed
 }
