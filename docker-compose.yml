@@ -1,36 +1,9 @@
 version: "3.9"
 services:
-  #TODO: add pgbouncer or pgcat and several instances of postgres
-  postgres:
-      image: postgres
-      environment:
-        POSTGRES_USER: "${DATABASE_USER}"
-        POSTGRES_PASSWORD: "${DATABASE_PASSWORD}"
-        POSTGRES_DB: "${DATABASE_NAME}"
-      volumes:
-        - database-volume:/var/lib/postgresql/data
-  
-  pgbouncer:
-    image: edoburu/pgbouncer
-    environment:
-       - DB_USER="${DATABASE_USER}"
-       - DB_PASSWORD="${DATABASE_PASSWORD}"
-       - DB_HOST=postgres
-       - DB_NAME="${DATABASE_NAME}" 
-       - POOL_MODE=transaction
-    ports:
-      - "5432:5432"
-    depends_on:
-      - postgres
-
   redis:
     image: redis:6.2-alpine
-    # environment:
-      # - REDIS_PASSWORD="${REDIS_PASSWORD}"
-      # - REDIS_ACLFILE=/usr/local/etc/redis/users.acl
     ports:
       - '6379:6379'
-    # command: redis-server --save 20 1 --loglevel warning --requirepass $${REDIS_PASSWORD}
     command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--save", "20", "1"]
     volumes: 
       - redis-volume:/redis/data
@@ -45,23 +18,7 @@ services:
       - "3011-3012:3005"
       - "50057-50058:50051"
     depends_on:
-      - liquibase
       - redis
-  
-  liquibase:
-    image: liquibase/liquibase
-    volumes:
-      - ./configs/migrations:/liquibase/changelog
-    command: [
-        "liquibase",
-        "--username=${DATABASE_USER}",
-        "--password=${DATABASE_PASSWORD}",
-        "--changeLogFile=changelog/db.changelog-root.xml",
-        "--url=${DATABASE_URL}",
-        "update"
-    ]
-    depends_on:
-      - pgbouncer
   
   nginx:
     image: nginx
@@ -87,7 +44,6 @@ services:
       - api
 
 volumes:
-  database-volume:
   redis-volume:
     driver: local
 networks:

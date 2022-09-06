@@ -13,7 +13,7 @@ import (
 )
 
 /*
-TODO:
+Basic implementation of feed:
 HASHMAP1 (REDIS_POSTS_KEY): post_id -> {full json post info}
 SORTEDSET1 (REDIS_FEED_KEY): [(create_date, post_id) ... (create_date, post_id)]
 
@@ -39,11 +39,28 @@ Use-cases:
 
 */
 
+// TODO: add building feed by requesting to Posts Service via gRPC
+
 const (
 	REDIS_POSTS_KEY    = "posts"
 	REDIS_FEED_KEY     = "feed"
 	REDIS_COMMENTS_KEY = "comments"
 )
+
+type FeedBlock struct {
+	PostId          int
+	PostPreviewText string
+	PostTopic       string
+	AuthorId        int
+	AuthorName      string
+	CreateDate      time.Time
+	CommentsCount   int64
+}
+
+type FullPostInfo struct {
+	Post     entities.FeedPost
+	Comments []entities.FeedComment
+}
 
 type FeedService struct {
 	redis *redisService.RedisService
@@ -159,16 +176,6 @@ func (s *FeedService) DeleteComment(postId int, commentId int) error {
 	})()
 }
 
-type FeedBlock struct {
-	PostId          int
-	PostPreviewText string
-	PostTopic       string
-	AuthorId        int
-	AuthorName      string
-	CreateDate      time.Time
-	CommentsCount   int64
-}
-
 func toFeedBlock(post *entities.FeedPost, commentsCount int64) FeedBlock {
 	return FeedBlock{
 		PostId:          post.PostId,
@@ -221,11 +228,6 @@ func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 		return nil, fmt.Errorf("unable cast to []FeedBlock")
 	}
 	return result, err
-}
-
-type FullPostInfo struct {
-	Post     entities.FeedPost
-	Comments []entities.FeedComment
 }
 
 func (s *FeedService) GetPost(postId int) (*FullPostInfo, error) {
