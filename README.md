@@ -37,5 +37,13 @@ AUTH_SERVICE_CLIENT_TLS_CERT_PATH=configs/tls/ca-cert.pem
 
 #http client
 HTTP_CLIENT_REQUEST_TIMEOUT_IN_SECONDS=30 # connection time, any redirects, and reading the response body
+
+#redis
+REDIS_HOST=192.168.0.18
+REDIS_PORT=6379
+REDIS_DATABASE_NUMBER=0
+REDIS_USER=feed_builder_service
+REDIS_PASSWORD=testpwd
+REDIS_QUERY_TIMEOUT_IN_SECONDS=30
 ```
 2. `docker-compose build && docker-compose up`
