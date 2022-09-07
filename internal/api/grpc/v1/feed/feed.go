@@ -10,8 +10,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-// TODO: implement update and delete user ops
-
 type FeedBuilderServiceServer struct {
 	feed.UnimplementedFeedBuilderServiceServer
 }
@@ -21,7 +19,6 @@ func RegisterServiceServer(s *grpc.Server) {
 }
 
 func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.CreatePostRequest) (*feed.CreatePostReply, error) {
-	fmt.Printf("CreatePostRequest: %v\n", *in)
 	// TODO: use local cache for getting user name
 	user, err := services.Instance().Profiles().GetUser(int32(in.AuthorId))
 	if err != nil {
@@ -31,7 +28,6 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("CreatePost obj: %v\n", *post)
 	err = services.Instance().Feed().CreatePost(post)
 	if err != nil {
 		return nil, err
@@ -40,7 +36,6 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 }
 
 func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.UpdatePostRequest) (*feed.UpdatePostReply, error) {
-	fmt.Printf("UpdatePostRequest: %v\n", *in)
 	// TODO: use local cache for getting user name
 	user, err := services.Instance().Profiles().GetUser(int32(in.AuthorId))
 	if err != nil {
@@ -50,7 +45,6 @@ func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.Upda
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("UpdatePost obj: %v\n", *post)
 	err = services.Instance().Feed().UpdatePost(post)
 	if err != nil {
 		return nil, err
@@ -106,6 +100,16 @@ func (s *FeedBuilderServiceServer) DeleteComment(ctx context.Context, in *feed.D
 		return nil, err
 	}
 	return &feed.DeleteCommentReply{}, nil
+}
+
+func (s *FeedBuilderServiceServer) UpdateUser(ctx context.Context, in *feed.UpdateUserRequest) (*feed.UpdateUserReply, error) {
+	// TODO:
+	return nil, fmt.Errorf("NOT IMPLEMENTED")
+}
+
+func (s *FeedBuilderServiceServer) DeleteUser(ctx context.Context, in *feed.DeleteUserRequest) (*feed.DeleteUserReply, error) {
+	// TODO:
+	return nil, fmt.Errorf("NOT IMPLEMENTED")
 }
 
 func toFeedPost(post any, authorName string) (*entities.FeedPost, error) {

@@ -176,45 +176,21 @@ func (s *FeedService) DeleteComment(postId int, commentId int) error {
 	})()
 }
 
-func toFeedBlock(post *entities.FeedPost, commentsCount int64) FeedBlock {
-	return FeedBlock{
-		PostId:          post.PostId,
-		PostPreviewText: post.PostPreviewText,
-		PostTopic:       post.PostTopic,
-		AuthorId:        post.AuthorId,
-		AuthorName:      post.AuthorName,
-		CreateDate:      post.CreateDate,
-		CommentsCount:   commentsCount,
-	}
-}
-
 func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 	data, err := s.redis.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
-		postIds, err := cli.ZRangeByScore(ctx, REDIS_FEED_KEY, &redis.ZRangeBy{
-			Min:    "-inf",
-			Max:    "+inf",
-			Offset: int64(offset),
-			Count:  int64(limit),
-		}).Result()
+		postIds, err := getPostIds(offset, limit, cli, ctx)
 		if err != nil {
 			return nil, err
 		}
 		result := make([]FeedBlock, 0, limit)
 		for _, postId := range postIds {
-			postStr, err := cli.HGet(ctx, REDIS_POSTS_KEY, PostKeyStr(postId)).Result()
+			post, err := getPost(PostKeyStr(postId), cli, ctx)
 			if err != nil {
-				return nil, fmt.Errorf("unable to get feed post: %v", err)
+				return nil, err
 			}
-			var post entities.FeedPost
-			err = json.Unmarshal([]byte(postStr), &post)
+			commentsCount, err := getCommentsCount(PostCommentsKeyStr(postId), cli, ctx)
 			if err != nil {
-				return nil, fmt.Errorf("unable to get unmarshal feed post: %v", err)
-			}
-
-			postCommentsKey := PostCommentsKeyStr(postId)
-			commentsCount, err := cli.ZCount(ctx, postCommentsKey, "-inf", "+inf").Result()
-			if err != nil {
-				return nil, fmt.Errorf("unable to get feed post comments count: %v", err)
+				return nil, err
 			}
 			feedBlock := toFeedBlock(&post, commentsCount)
 			result = append(result, feedBlock)
@@ -232,37 +208,17 @@ func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 
 func (s *FeedService) GetPost(postId int) (*FullPostInfo, error) {
 	data, err := s.redis.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
-		postJsonStr, err := cli.HGet(ctx, REDIS_POSTS_KEY, PostKey(postId)).Result()
-		if err != nil {
-			return nil, fmt.Errorf("unable to get feed post: %v", err)
-		}
-		var resultPost entities.FeedPost
-		err = json.Unmarshal([]byte(postJsonStr), &resultPost)
-		if err != nil {
-			return nil, fmt.Errorf("unable to get unmarshal feed post: %v", err)
-		}
-
-		postCommentsKey := PostCommentsKey(postId)
-		commentIds, err := cli.ZRangeByScore(ctx, postCommentsKey, &redis.ZRangeBy{
-			Min: "-inf",
-			Max: "+inf",
-		}).Result()
-
+		resultPost, err := getPost(PostKey(postId), cli, ctx)
 		if err != nil {
 			return nil, err
 		}
-		resultComments := make([]entities.FeedComment, 0)
-		for _, commentId := range commentIds {
-			commentJsonStr, err := cli.HGet(ctx, REDIS_COMMENTS_KEY, CommentKeyStr(commentId)).Result()
-			if err != nil {
-				return nil, fmt.Errorf("unable to get feed comment: %v", err)
-			}
-			var comment entities.FeedComment
-			err = json.Unmarshal([]byte(commentJsonStr), &comment)
-			if err != nil {
-				return nil, fmt.Errorf("unable to get unmarshal feed comment: %v", err)
-			}
-			resultComments = append(resultComments, comment)
+		commentIds, err := getCommentsIds(PostCommentsKey(postId), cli, ctx)
+		if err != nil {
+			return nil, err
+		}
+		resultComments, err := getComments(toCommentKeys(commentIds), cli, ctx)
+		if err != nil {
+			return nil, err
 		}
 
 		return &FullPostInfo{Post: resultPost, Comments: resultComments}, err
@@ -304,4 +260,88 @@ func ToJsonString(obj any) (string, error) {
 		return "", err
 	}
 	return string(bytes), nil
+}
+
+func getPostIds(offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
+	return cli.ZRangeByScore(ctx, REDIS_FEED_KEY, &redis.ZRangeBy{
+		Min:    "-inf",
+		Max:    "+inf",
+		Offset: int64(offset),
+		Count:  int64(limit),
+	}).Result()
+}
+
+func getCommentsIds(postCommentsKey string, cli *redis.Client, ctx context.Context) ([]string, error) {
+	return cli.ZRangeByScore(ctx, postCommentsKey, &redis.ZRangeBy{
+		Min: "-inf",
+		Max: "+inf",
+	}).Result()
+}
+
+func getPost(postKey string, cli *redis.Client, ctx context.Context) (entities.FeedPost, error) {
+	var post entities.FeedPost
+	postStr, err := cli.HGet(ctx, REDIS_POSTS_KEY, postKey).Result()
+	if err != nil {
+		return post, fmt.Errorf("unable to get feed post: %v", err)
+	}
+	err = json.Unmarshal([]byte(postStr), &post)
+	if err != nil {
+		return post, fmt.Errorf("unable to get unmarshal feed post: %v", err)
+	}
+	return post, nil
+}
+
+func getCommentsCount(postCommentsKey string, cli *redis.Client, ctx context.Context) (int64, error) {
+	commentsCount, err := cli.ZCount(ctx, postCommentsKey, "-inf", "+inf").Result()
+	if err != nil {
+		return 0, fmt.Errorf("unable to get feed post comments count: %v", err)
+	}
+	return commentsCount, nil
+}
+
+func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) ([]entities.FeedComment, error) {
+	resultComments := make([]entities.FeedComment, 0)
+
+	if len(commentKeys) <= 0 {
+		return resultComments, nil
+	}
+
+	commentVals, err := cli.HMGet(ctx, REDIS_COMMENTS_KEY, commentKeys...).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, commentVal := range commentVals {
+		commentJsonStr, ok := commentVal.(string)
+		if !ok {
+			return nil, fmt.Errorf("unable cast comment json to string")
+		}
+		var comment entities.FeedComment
+		err = json.Unmarshal([]byte(commentJsonStr), &comment)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get unmarshal feed comment: %v", err)
+		}
+		resultComments = append(resultComments, comment)
+	}
+	return resultComments, nil
+}
+
+func toFeedBlock(post *entities.FeedPost, commentsCount int64) FeedBlock {
+	return FeedBlock{
+		PostId:          post.PostId,
+		PostPreviewText: post.PostPreviewText,
+		PostTopic:       post.PostTopic,
+		AuthorId:        post.AuthorId,
+		AuthorName:      post.AuthorName,
+		CreateDate:      post.CreateDate,
+		CommentsCount:   commentsCount,
+	}
+}
+
+func toCommentKeys(commentIds []string) []string {
+	commentKeys := make([]string, 0, len(commentIds))
+	for _, commentId := range commentIds {
+		commentKeys = append(commentKeys, CommentKeyStr(commentId))
+	}
+	return commentKeys
 }
