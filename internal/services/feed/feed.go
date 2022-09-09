@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/feed"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/posts"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
 	redisService "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/redis"
 	"github.com/go-redis/redis/v8"
 )
@@ -63,17 +66,37 @@ type FullPostInfo struct {
 }
 
 type FeedService struct {
-	redis *redisService.RedisService
+	redisService    *redisService.RedisService
+	postsService    *posts.PostsGRPCService
+	profilesService *profiles.ProfilesGRPCService
 }
 
-func CreateFeedService() *FeedService {
+func CreateFeedService(postsService *posts.PostsGRPCService, profilesService *profiles.ProfilesGRPCService) *FeedService {
 	return &FeedService{
-		redis: redisService.CreateRedisService(),
+		redisService:    redisService.CreateRedisService(),
+		postsService:    postsService,
+		profilesService: profilesService,
 	}
 }
 
 func (s *FeedService) Shutdown() error {
-	return s.redis.Shutdown()
+	result := []error{}
+	err := s.redisService.Shutdown()
+	if err != nil {
+		result = append(result, err)
+	}
+	err = s.postsService.Shutdown()
+	if err != nil {
+		result = append(result, err)
+	}
+	err = s.profilesService.Shutdown()
+	if err != nil {
+		result = append(result, err)
+	}
+	if len(result) > 0 {
+		return fmt.Errorf("errors during feed service shutdown: %v", result)
+	}
+	return nil
 }
 
 func (s *FeedService) CreatePost(post *entities.FeedPost) error {
@@ -82,7 +105,7 @@ func (s *FeedService) CreatePost(post *entities.FeedPost) error {
 	if err != nil {
 		return err
 	}
-	return s.redis.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
 		err := cli.HSet(ctx, REDIS_POSTS_KEY, postKey, postVal).Err()
 		if err != nil {
 			return err
@@ -101,7 +124,7 @@ func (s *FeedService) UpdatePost(post *entities.FeedPost) error {
 	if err != nil {
 		return err
 	}
-	return s.redis.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
 		err := cli.HSet(ctx, REDIS_POSTS_KEY, postKey, postVal).Err()
 		if err != nil {
 			return err
@@ -112,7 +135,7 @@ func (s *FeedService) UpdatePost(post *entities.FeedPost) error {
 
 func (s *FeedService) DeletePost(postId int) error {
 	postKey := PostKey(postId)
-	return s.redis.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
 		err := cli.ZRem(ctx, REDIS_FEED_KEY, postId).Err()
 		if err != nil {
 			return err
@@ -132,7 +155,7 @@ func (s *FeedService) CreateComment(comment *entities.FeedComment) error {
 	if err != nil {
 		return err
 	}
-	return s.redis.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
 		err := cli.HSet(ctx, REDIS_COMMENTS_KEY, commentKey, commentVal).Err()
 		if err != nil {
 			return err
@@ -151,7 +174,7 @@ func (s *FeedService) UpdateComment(comment *entities.FeedComment) error {
 	if err != nil {
 		return err
 	}
-	return s.redis.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
 		err := cli.HSet(ctx, REDIS_COMMENTS_KEY, commentKey, commentVal).Err()
 		if err != nil {
 			return err
@@ -163,7 +186,7 @@ func (s *FeedService) UpdateComment(comment *entities.FeedComment) error {
 func (s *FeedService) DeleteComment(postId int, commentId int) error {
 	commentKey := CommentKey(commentId)
 	postCommentsKey := PostCommentsKey(postId)
-	return s.redis.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
 		err := cli.ZRem(ctx, postCommentsKey, commentId).Err()
 		if err != nil {
 			return err
@@ -177,7 +200,7 @@ func (s *FeedService) DeleteComment(postId int, commentId int) error {
 }
 
 func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
-	data, err := s.redis.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		postIds, err := getPostIds(offset, limit, cli, ctx)
 		if err != nil {
 			return nil, err
@@ -207,7 +230,7 @@ func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 }
 
 func (s *FeedService) GetPost(postId int) (*FullPostInfo, error) {
-	data, err := s.redis.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		resultPost, err := getPost(PostKey(postId), cli, ctx)
 		if err != nil {
 			return nil, err
@@ -228,6 +251,150 @@ func (s *FeedService) GetPost(postId int) (*FullPostInfo, error) {
 		return nil, fmt.Errorf("unable cast to FullPostInfo")
 	}
 	return result, err
+}
+
+func (s *FeedService) Sync() error {
+	// TODO: check concurrent create/update/delete events during syncing
+	// TODO: add appropriate locks or op time comparings
+	return s.syncPosts()
+}
+
+func (s *FeedService) syncPosts() error {
+	var offset int32 = 0
+	var limit int32 = 50
+	for {
+		postReplies, err := s.postsService.GetPosts(offset, limit, nil)
+		if err != nil {
+			return fmt.Errorf("unable to syncPosts: %v", err)
+		}
+		if len(postReplies) <= 0 {
+			return nil
+		}
+
+		userIds, err := toUserIds(postReplies)
+		if err != nil {
+			return fmt.Errorf("unable to syncPosts: %v", err)
+		}
+		userReplies, err := s.getUsers(userIds)
+		if err != nil {
+			return fmt.Errorf("unable to syncPosts: %v", err)
+		}
+		usersById := make(map[int]string)
+		for _, userReply := range userReplies {
+			usersById[userReply.Id] = userReply.Login
+		}
+		for _, postReply := range postReplies {
+			authorName, ok := usersById[postReply.AuthorId]
+			if !ok {
+				return fmt.Errorf("unable to syncPosts, unable to find author with id: %v", postReply.AuthorId)
+			}
+			feedPost, convertErr := ToFeedPost(postReply, authorName)
+			if convertErr != nil {
+				return fmt.Errorf("unable to syncPosts: %v", convertErr)
+			}
+
+			createFeedPostErr := s.CreatePost(feedPost)
+			if createFeedPostErr != nil {
+				return fmt.Errorf("unable to syncPosts, unable save to store the feed post with ID: %v", feedPost.PostId)
+			}
+			s.syncComments(int32(postReply.Id))
+		}
+
+		if len(postReplies) < int(limit) {
+			break
+		}
+
+		offset += limit
+	}
+
+	return nil
+}
+func (s *FeedService) syncComments(postId int32) error {
+	var offset int32 = 0
+	var limit int32 = 50
+	for {
+		commentReplies, err := s.postsService.GetComments(postId, offset, limit)
+		if err != nil {
+			return fmt.Errorf("unable to syncComments: %v", err)
+		}
+		if len(commentReplies) <= 0 {
+			return nil
+		}
+
+		userIds, err := toUserIds(commentReplies)
+		if err != nil {
+			return fmt.Errorf("unable to syncComments: %v", err)
+		}
+		userReplies, err := s.getUsers(userIds)
+		if err != nil {
+			return fmt.Errorf("unable to syncComments: %v", err)
+		}
+		usersById := make(map[int]string)
+		for _, userReply := range userReplies {
+			usersById[userReply.Id] = userReply.Login
+		}
+		for _, commentReply := range commentReplies {
+			authorName, ok := usersById[commentReply.AuthorId]
+			if !ok {
+				return fmt.Errorf("unable to syncComments, unable to find author with id: %v", commentReply.AuthorId)
+			}
+			feedComment, convertErr := ToFeedComment(commentReply, authorName)
+			if convertErr != nil {
+				return fmt.Errorf("unable to syncComments: %v", convertErr)
+			}
+
+			createFeedCommentErr := s.CreateComment(feedComment)
+			if createFeedCommentErr != nil {
+				return fmt.Errorf("unable to syncComments, unable save to store the feed comment with ID: %v. Post ID: %v", feedComment.CommentId, feedComment.PostId)
+			}
+		}
+
+		if len(commentReplies) < int(limit) {
+			break
+		}
+
+		offset += limit
+	}
+
+	return nil
+}
+
+func (s *FeedService) getUsers(userIds []int32) ([]profiles.GetUserResult, error) {
+	var offset int32 = 0
+	var limit int32 = 50
+	result := []profiles.GetUserResult{}
+	for {
+		userReplies, err := s.profilesService.GetUsers(offset, limit, userIds)
+		if err != nil {
+			return result, fmt.Errorf("unable to getUsers via gRPC: %v", err)
+		}
+		if len(userReplies) <= 0 {
+			return result, nil
+		}
+
+		result = append(result, userReplies...)
+
+		offset += limit
+	}
+}
+
+func toUserIds(input any) ([]int32, error) {
+	switch t := input.(type) {
+	case []posts.GetPostResult:
+		result := make([]int32, len(t))
+		for i, p := range t {
+			result[i] = int32(p.AuthorId)
+		}
+		return result, nil
+	case []posts.GetCommentResult:
+		result := make([]int32, len(t))
+		for i, c := range t {
+			result[i] = int32(c.AuthorId)
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("unknown type of input for 'toUserIds' func: %T", t)
+	}
 }
 
 func PostKey(postId int) string {
@@ -344,4 +511,98 @@ func toCommentKeys(commentIds []string) []string {
 		commentKeys = append(commentKeys, CommentKeyStr(commentId))
 	}
 	return commentKeys
+}
+
+func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
+	switch t := post.(type) {
+	case *feed.CreatePostRequest:
+		return &entities.FeedPost{
+			AuthorId:        int(t.AuthorId),
+			AuthorName:      authorName,
+			PostId:          int(t.Id),
+			PostText:        t.Text,
+			PostPreviewText: t.PreviewText,
+			PostTopic:       t.Topic,
+			PostState:       t.State,
+			CreateDate:      t.CreateDate.AsTime(),
+			LastUpdateDate:  t.LastUpdateDate.AsTime(),
+		}, nil
+	case *feed.UpdatePostRequest:
+		return &entities.FeedPost{
+			AuthorId:        int(t.AuthorId),
+			AuthorName:      authorName,
+			PostId:          int(t.Id),
+			PostText:        t.Text,
+			PostPreviewText: t.PreviewText,
+			PostTopic:       t.Topic,
+			PostState:       t.State,
+			CreateDate:      t.CreateDate.AsTime(),
+			LastUpdateDate:  t.LastUpdateDate.AsTime(),
+		}, nil
+	case posts.GetPostResult:
+		return &entities.FeedPost{
+			AuthorId:        t.AuthorId,
+			AuthorName:      authorName,
+			PostId:          t.Id,
+			PostText:        t.Text,
+			PostPreviewText: t.PreviewText,
+			PostTopic:       t.Topic,
+			PostState:       t.State,
+			CreateDate:      t.CreateDate,
+			LastUpdateDate:  t.LastUpdateDate,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown type of post: %T", post)
+	}
+}
+
+func ToFeedComment(comment any, authorName string) (*entities.FeedComment, error) {
+	switch t := comment.(type) {
+	case *feed.CreateCommentRequest:
+		return &entities.FeedComment{
+			AuthorId:        int(t.AuthorId),
+			AuthorName:      authorName,
+			PostId:          int(t.PostId),
+			LinkedCommentId: toLinkedCommentIdPrt(t.LinkedCommentId),
+			CommentId:       int(t.Id),
+			CommentText:     t.Text,
+			CommentState:    t.State,
+			CreateDate:      t.CreateDate.AsTime(),
+			LastUpdateDate:  t.LastUpdateDate.AsTime(),
+		}, nil
+	case *feed.UpdateCommentRequest:
+		return &entities.FeedComment{
+			AuthorId:        int(t.AuthorId),
+			AuthorName:      authorName,
+			PostId:          int(t.PostId),
+			LinkedCommentId: toLinkedCommentIdPrt(t.LinkedCommentId),
+			CommentId:       int(t.Id),
+			CommentText:     t.Text,
+			CommentState:    t.State,
+			CreateDate:      t.CreateDate.AsTime(),
+			LastUpdateDate:  t.LastUpdateDate.AsTime(),
+		}, nil
+	case posts.GetCommentResult:
+		return &entities.FeedComment{
+			AuthorId:        t.AuthorId,
+			AuthorName:      authorName,
+			PostId:          t.PostId,
+			LinkedCommentId: t.LinkedCommentId,
+			CommentId:       t.Id,
+			CommentText:     t.Text,
+			CommentState:    t.State,
+			CreateDate:      t.CreateDate,
+			LastUpdateDate:  t.LastUpdateDate,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown type of comment: %T", comment)
+	}
+}
+
+func toLinkedCommentIdPrt(val int32) *int {
+	if val == 0 {
+		return nil
+	}
+	result := int(val)
+	return &result
 }

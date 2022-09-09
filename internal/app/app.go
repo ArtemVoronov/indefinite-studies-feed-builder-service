@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	feedGrpcApi "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/grpc/v1/feed"
@@ -29,7 +30,8 @@ func setup() {
 }
 
 func shutdown() {
-	services.Instance().Shutdown()
+	err := services.Instance().Shutdown()
+	log.Printf("error during app shutdown: %v", err)
 }
 
 func createRestApi() *gin.Engine {
@@ -56,6 +58,8 @@ func createRestApi() *gin.Engine {
 	{
 		authorized.GET("/feed/debug/vars", expvar.Handler())
 		authorized.GET("/feed/safe-ping", ping.SafePing)
+
+		authorized.POST("/feed/sync", feedRestApi.Sync)
 	}
 
 	return router

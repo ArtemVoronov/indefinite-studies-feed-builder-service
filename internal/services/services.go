@@ -1,12 +1,14 @@
 package services
 
 import (
+	"fmt"
 	"log"
 	"sync"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/posts"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 )
@@ -30,26 +32,46 @@ func Instance() *Services {
 }
 
 func createServices() *Services {
-	authcreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("AUTH_SERVICE_CLIENT_TLS_CERT_PATH"))
+	authCreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("AUTH_SERVICE_CLIENT_TLS_CERT_PATH"))
 	if err != nil {
 		log.Fatalf("unable to load TLS credentials")
 	}
-	profilescreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("PROFILES_SERVICE_CLIENT_TLS_CERT_PATH"))
+	profilesCreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("PROFILES_SERVICE_CLIENT_TLS_CERT_PATH"))
 	if err != nil {
 		log.Fatalf("unable to load TLS credentials")
 	}
+	postsCreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("POSTS_SERVICE_CLIENT_TLS_CERT_PATH"))
+	if err != nil {
+		log.Fatalf("unable to load TLS credentials")
+	}
+	postsService := posts.CreatePostsGRPCService(utils.EnvVar("POSTS_SERVICE_GRPC_HOST")+":"+utils.EnvVar("POSTS_SERVICE_GRPC_PORT"), &postsCreds)
+	profilesService := profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilesCreds)
 
 	return &Services{
-		profiles: profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilescreds),
-		auth:     auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authcreds),
-		feed:     feed.CreateFeedService(),
+		profiles: profilesService,
+		auth:     auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authCreds),
+		feed:     feed.CreateFeedService(postsService, profilesService),
 	}
 }
 
-func (s *Services) Shutdown() {
-	s.profiles.Shutdown()
-	s.auth.Shutdown()
-	s.feed.Shutdown()
+func (s *Services) Shutdown() error {
+	result := []error{}
+	err := s.profiles.Shutdown()
+	if err != nil {
+		result = append(result, err)
+	}
+	err = s.auth.Shutdown()
+	if err != nil {
+		result = append(result, err)
+	}
+	err = s.feed.Shutdown()
+	if err != nil {
+		result = append(result, err)
+	}
+	if len(result) > 0 {
+		return fmt.Errorf("errors during shutdown: %v", result)
+	}
+	return nil
 }
 
 func (s *Services) Auth() *auth.AuthGRPCService {

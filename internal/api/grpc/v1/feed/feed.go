@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
-	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
+	feedService "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/feed"
 	"google.golang.org/grpc"
 )
@@ -24,7 +24,7 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 	if err != nil {
 		return nil, err
 	}
-	post, err := toFeedPost(in, user.Login)
+	post, err := feedService.ToFeedPost(in, user.Login)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.Upda
 	if err != nil {
 		return nil, err
 	}
-	post, err := toFeedPost(in, user.Login)
+	post, err := feedService.ToFeedPost(in, user.Login)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.C
 	if err != nil {
 		return nil, err
 	}
-	comment, err := toFeedComment(in, user.Login)
+	comment, err := feedService.ToFeedComment(in, user.Login)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.U
 	if err != nil {
 		return nil, err
 	}
-	comment, err := toFeedComment(in, user.Login)
+	comment, err := feedService.ToFeedComment(in, user.Login)
 	if err != nil {
 		return nil, err
 	}
@@ -110,74 +110,4 @@ func (s *FeedBuilderServiceServer) UpdateUser(ctx context.Context, in *feed.Upda
 func (s *FeedBuilderServiceServer) DeleteUser(ctx context.Context, in *feed.DeleteUserRequest) (*feed.DeleteUserReply, error) {
 	// TODO:
 	return nil, fmt.Errorf("NOT IMPLEMENTED")
-}
-
-func toFeedPost(post any, authorName string) (*entities.FeedPost, error) {
-	switch t := post.(type) {
-	case *feed.CreatePostRequest:
-		return &entities.FeedPost{
-			AuthorId:        int(t.AuthorId),
-			AuthorName:      authorName,
-			PostId:          int(t.Id),
-			PostText:        t.Text,
-			PostPreviewText: t.PreviewText,
-			PostTopic:       t.Topic,
-			PostState:       t.State,
-			CreateDate:      t.CreateDate.AsTime(),
-			LastUpdateDate:  t.LastUpdateDate.AsTime(),
-		}, nil
-	case *feed.UpdatePostRequest:
-		return &entities.FeedPost{
-			AuthorId:        int(t.AuthorId),
-			AuthorName:      authorName,
-			PostId:          int(t.Id),
-			PostText:        t.Text,
-			PostPreviewText: t.PreviewText,
-			PostTopic:       t.Topic,
-			PostState:       t.State,
-			CreateDate:      t.CreateDate.AsTime(),
-			LastUpdateDate:  t.LastUpdateDate.AsTime(),
-		}, nil
-	default:
-		return nil, fmt.Errorf("unknown type of post: %T", post)
-	}
-}
-
-func toFeedComment(comment any, authorName string) (*entities.FeedComment, error) {
-	switch t := comment.(type) {
-	case *feed.CreateCommentRequest:
-		return &entities.FeedComment{
-			AuthorId:        int(t.AuthorId),
-			AuthorName:      authorName,
-			PostId:          int(t.PostId),
-			LinkedCommentId: toLinkedCommentIdPrt(t.LinkedCommentId),
-			CommentId:       int(t.Id),
-			CommentText:     t.Text,
-			CommentState:    t.State,
-			CreateDate:      t.CreateDate.AsTime(),
-			LastUpdateDate:  t.LastUpdateDate.AsTime(),
-		}, nil
-	case *feed.UpdateCommentRequest:
-		return &entities.FeedComment{
-			AuthorId:        int(t.AuthorId),
-			AuthorName:      authorName,
-			PostId:          int(t.PostId),
-			LinkedCommentId: toLinkedCommentIdPrt(t.LinkedCommentId),
-			CommentId:       int(t.Id),
-			CommentText:     t.Text,
-			CommentState:    t.State,
-			CreateDate:      t.CreateDate.AsTime(),
-			LastUpdateDate:  t.LastUpdateDate.AsTime(),
-		}, nil
-	default:
-		return nil, fmt.Errorf("unknown type of comment: %T", comment)
-	}
-}
-
-func toLinkedCommentIdPrt(val int32) *int {
-	if val == 0 {
-		return nil
-	}
-	result := int(val)
-	return &result
 }

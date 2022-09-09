@@ -60,3 +60,16 @@ func GetPost(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+func Sync(c *gin.Context) {
+	// TODO: add loading feed for uncached pages partitions if it is required
+	err := services.Instance().Feed().Sync()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, "Unable to sync feed")
+		log.Printf("Unable to sync feed: %s", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, api.DONE)
+}
