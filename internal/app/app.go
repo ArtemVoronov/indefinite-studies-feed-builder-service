@@ -60,6 +60,7 @@ func createRestApi() *gin.Engine {
 		authorized.GET("/feed/safe-ping", ping.SafePing)
 
 		authorized.POST("/feed/sync", feedRestApi.Sync)
+		authorized.POST("/feed/clear", feedRestApi.Clear)
 	}
 
 	return router

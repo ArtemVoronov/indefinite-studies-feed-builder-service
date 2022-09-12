@@ -62,12 +62,23 @@ func GetPost(c *gin.Context) {
 }
 
 func Sync(c *gin.Context) {
-	// TODO: add loading feed for uncached pages partitions if it is required
 	err := services.Instance().Feed().Sync()
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to sync feed")
 		log.Printf("Unable to sync feed: %s", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, api.DONE)
+}
+
+func Clear(c *gin.Context) {
+	err := services.Instance().Feed().ClearFeed()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, "Unable to clear feed")
+		log.Printf("Unable to clear feed: %s", err)
 		return
 	}
 

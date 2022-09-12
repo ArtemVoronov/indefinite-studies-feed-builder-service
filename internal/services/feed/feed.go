@@ -39,10 +39,10 @@ Use-cases:
 8. get post ->
 	- get post by id from HASHMAP1
 	- get all comments by id from SORTEDSET2
-
+9. sync feed:
+	- clear all collections (post_id_comments...), REDIS_POSTS_KEY, REDIS_FEED_KEY, REDIS_COMMENTS_KEY
+	- load all posts and comments from posts service via gGRPC
 */
-
-// TODO: add building feed by requesting to Posts Service via gRPC
 
 const (
 	REDIS_POSTS_KEY    = "posts"
@@ -256,6 +256,7 @@ func (s *FeedService) GetPost(postId int) (*FullPostInfo, error) {
 func (s *FeedService) Sync() error {
 	// TODO: check concurrent create/update/delete events during syncing
 	// TODO: add appropriate locks or op time comparings
+	s.ClearFeed()
 	return s.syncPosts()
 }
 
@@ -357,6 +358,50 @@ func (s *FeedService) syncComments(postId int32) error {
 	}
 
 	return nil
+}
+
+func (s *FeedService) ClearFeed() error {
+	var offset int = 0
+	var limit int = 50
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+
+		for {
+			postIds, err := getPostIds(offset, limit, cli, ctx)
+			if err != nil {
+				return fmt.Errorf("unable to clear feed: %v", err)
+			}
+			if len(postIds) <= 0 {
+				return nil
+			}
+
+			for _, postId := range postIds {
+				postCommentsKey := PostCommentsKeyStr(postId)
+				if err := cli.Del(ctx, postCommentsKey).Err(); err != nil {
+					return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", postCommentsKey, err)
+				}
+			}
+
+			if len(postIds) < int(limit) {
+				break
+			}
+
+			offset += limit
+		}
+
+		if err := cli.Del(ctx, REDIS_COMMENTS_KEY).Err(); err != nil {
+			return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", REDIS_COMMENTS_KEY, err)
+		}
+
+		if err := cli.Del(ctx, REDIS_FEED_KEY).Err(); err != nil {
+			return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", REDIS_FEED_KEY, err)
+		}
+
+		if err := cli.Del(ctx, REDIS_POSTS_KEY).Err(); err != nil {
+			return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", REDIS_POSTS_KEY, err)
+		}
+
+		return nil
+	})()
 }
 
 func (s *FeedService) getUsers(userIds []int32) ([]profiles.GetUserResult, error) {
