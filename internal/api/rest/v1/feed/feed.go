@@ -6,9 +6,17 @@ import (
 	"strconv"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
+	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/api"
 	"github.com/gin-gonic/gin"
 )
+
+type FeedDTO struct {
+	Count  int
+	Offset int
+	Limit  int
+	Data   []feed.FeedBlock
+}
 
 func GetFeed(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "10")
@@ -24,12 +32,19 @@ func GetFeed(c *gin.Context) {
 		offset = 0
 	}
 
-	result, err := services.Instance().Feed().GetFeed(offset, limit)
+	feedBlocks, err := services.Instance().Feed().GetFeed(offset, limit)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to get feed")
 		log.Printf("Unable to get feed: %s", err)
 		return
+	}
+
+	result := &FeedDTO{
+		Data:   feedBlocks,
+		Count:  len(feedBlocks),
+		Offset: offset,
+		Limit:  limit,
 	}
 
 	c.JSON(http.StatusOK, result)
