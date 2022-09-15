@@ -27,6 +27,9 @@ func Start() {
 
 func setup() {
 	services.Instance()
+	if err := services.Instance().Feed().Sync(); err != nil {
+		log.Fatalf("unable to sync feed: %v", err)
+	}
 }
 
 func shutdown() {
