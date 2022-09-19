@@ -1,5 +1,8 @@
 FROM golang:1.18
 
+EXPOSE 3005
+EXPOSE 50051
+
 RUN mkdir /app
 WORKDIR /app
 
