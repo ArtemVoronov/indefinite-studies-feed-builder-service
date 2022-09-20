@@ -53,7 +53,7 @@ func createRestApi() *gin.Engine {
 	v1 := router.Group("/api/v1")
 
 	v1.GET("/feed/ping", ping.Ping)
-	v1.GET("/feed/", feedRestApi.GetFeed)
+	v1.GET("/feed", feedRestApi.GetFeed)
 	v1.GET("/feed/:id", feedRestApi.GetPost)
 
 	authorized := router.Group("/api/v1")
