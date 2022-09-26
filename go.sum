@@ -1,6 +1,6 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20220926095121-85992b08b242 h1:xA7mOoA9nYSeZE/Hxa9PJDIQxVvxkAij7KYq7yPFkLg=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20220926095121-85992b08b242/go.mod h1:REIvGUPGzvNcSoiSzkjw+pkW8RPY+mFudWAtf5/Gj24=
+github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20220926144150-72f9a19242de h1:wrsF/bIzFsbdwga6Bm+AvLd25PPaW5piscDwQaVAUEo=
+github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20220926144150-72f9a19242de/go.mod h1:REIvGUPGzvNcSoiSzkjw+pkW8RPY+mFudWAtf5/Gj24=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/cespare/xxhash/v2 v2.1.2 h1:YRXhKfTDauu4ajMg1TPgFO5jnlC2HCbmLXMcTG5cbYE=
