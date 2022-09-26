@@ -61,8 +61,9 @@ type FeedBlock struct {
 }
 
 type FullPostInfo struct {
-	Post     entities.FeedPost
-	Comments []entities.FeedComment
+	Post        entities.FeedPost
+	Comments    []entities.FeedComment
+	CommentsMap map[int]entities.FeedComment
 }
 
 type FeedService struct {
@@ -239,12 +240,12 @@ func (s *FeedService) GetPost(postId int) (*FullPostInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		resultComments, err := getComments(toCommentKeys(commentIds), cli, ctx)
+		resultComments, resultCommentsMap, err := getComments(toCommentKeys(commentIds), cli, ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		return &FullPostInfo{Post: resultPost, Comments: resultComments}, err
+		return &FullPostInfo{Post: resultPost, Comments: resultComments, CommentsMap: resultCommentsMap}, err
 	})()
 	result, ok := data.(*FullPostInfo)
 	if !ok {
@@ -511,31 +512,33 @@ func getCommentsCount(postCommentsKey string, cli *redis.Client, ctx context.Con
 	return commentsCount, nil
 }
 
-func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) ([]entities.FeedComment, error) {
+func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) ([]entities.FeedComment, map[int]entities.FeedComment, error) {
 	resultComments := make([]entities.FeedComment, 0)
+	resultCommentsMap := make(map[int]entities.FeedComment)
 
 	if len(commentKeys) <= 0 {
-		return resultComments, nil
+		return resultComments, resultCommentsMap, nil
 	}
 
 	commentVals, err := cli.HMGet(ctx, REDIS_COMMENTS_KEY, commentKeys...).Result()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for _, commentVal := range commentVals {
 		commentJsonStr, ok := commentVal.(string)
 		if !ok {
-			return nil, fmt.Errorf("unable cast comment json to string")
+			return nil, nil, fmt.Errorf("unable cast comment json to string")
 		}
 		var comment entities.FeedComment
 		err = json.Unmarshal([]byte(commentJsonStr), &comment)
 		if err != nil {
-			return nil, fmt.Errorf("unable to get unmarshal feed comment: %v", err)
+			return nil, nil, fmt.Errorf("unable to get unmarshal feed comment: %v", err)
 		}
 		resultComments = append(resultComments, comment)
+		resultCommentsMap[comment.CommentId] = comment
 	}
-	return resultComments, nil
+	return resultComments, resultCommentsMap, nil
 }
 
 func toFeedBlock(post *entities.FeedPost, commentsCount int64) FeedBlock {
