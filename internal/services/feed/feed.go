@@ -63,13 +63,18 @@ type FeedBlock struct {
 type FullPostInfo struct {
 	Post        entities.FeedPost
 	Comments    []entities.FeedComment
-	CommentsMap map[int]entities.FeedComment
+	CommentsMap map[int]FeedCommentWithIndex
 }
 
 type FeedService struct {
 	redisService    *redisService.RedisService
 	postsService    *posts.PostsGRPCService
 	profilesService *profiles.ProfilesGRPCService
+}
+
+type FeedCommentWithIndex struct {
+	Index int
+	entities.FeedComment
 }
 
 func CreateFeedService(postsService *posts.PostsGRPCService, profilesService *profiles.ProfilesGRPCService) *FeedService {
@@ -512,9 +517,9 @@ func getCommentsCount(postCommentsKey string, cli *redis.Client, ctx context.Con
 	return commentsCount, nil
 }
 
-func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) ([]entities.FeedComment, map[int]entities.FeedComment, error) {
+func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) ([]entities.FeedComment, map[int]FeedCommentWithIndex, error) {
 	resultComments := make([]entities.FeedComment, 0)
-	resultCommentsMap := make(map[int]entities.FeedComment)
+	resultCommentsMap := make(map[int]FeedCommentWithIndex)
 
 	if len(commentKeys) <= 0 {
 		return resultComments, resultCommentsMap, nil
@@ -525,7 +530,7 @@ func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) (
 		return nil, nil, err
 	}
 
-	for _, commentVal := range commentVals {
+	for commentIndex, commentVal := range commentVals {
 		commentJsonStr, ok := commentVal.(string)
 		if !ok {
 			return nil, nil, fmt.Errorf("unable cast comment json to string")
@@ -536,7 +541,7 @@ func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) (
 			return nil, nil, fmt.Errorf("unable to get unmarshal feed comment: %v", err)
 		}
 		resultComments = append(resultComments, comment)
-		resultCommentsMap[comment.CommentId] = comment
+		resultCommentsMap[comment.CommentId] = FeedCommentWithIndex{Index: commentIndex, FeedComment: comment}
 	}
 	return resultComments, resultCommentsMap, nil
 }
