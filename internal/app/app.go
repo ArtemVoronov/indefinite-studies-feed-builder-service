@@ -36,7 +36,7 @@ func setup() {
 
 func shutdown() {
 	err := services.Instance().Shutdown()
-	log.Printf("error during app shutdown: %v", err)
+	log.Error("error during app shutdown", err.Error())
 }
 
 func createRestApi(logger *logrus.Logger) *gin.Engine {
