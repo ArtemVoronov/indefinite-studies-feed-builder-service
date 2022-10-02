@@ -11,6 +11,7 @@ import (
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 	"github.com/gin-contrib/expvar"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -19,7 +20,7 @@ import (
 
 func Start() {
 	app.LoadEnv()
-	log.SetUpLogPath()
+	log.SetUpLogPath(utils.EnvVarDefault("APP_LOGS_PATH", "stdout"))
 	creds := app.TLSCredentials()
 	go func() {
 		app.StartGRPC(setup, shutdown, app.HostGRPC(), createGrpcApi, &creds, log.Log)
