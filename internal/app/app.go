@@ -2,17 +2,15 @@ package app
 
 import (
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 
 	feedGrpcApi "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/grpc/v1/feed"
 	feedRestApi "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/rest/v1/feed"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/rest/v1/ping"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
-	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 	"github.com/gin-contrib/expvar"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -21,21 +19,12 @@ import (
 
 func Start() {
 	app.LoadEnv()
-	logger := app.NewLogrusLogger()
-	logpath := utils.EnvVarDefault("APP_LOGS_PATH", "stdout")
-	if logpath != "stdout" {
-		file, err := os.OpenFile(logpath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		if err != nil {
-			log.Fatalf("unable init logging: %v", err)
-		}
-		logger.SetOutput(file)
-		defer file.Close()
-	}
+	log.SetUpLogPath()
 	creds := app.TLSCredentials()
 	go func() {
-		app.StartGRPC(setup, shutdown, app.HostGRPC(), createGrpcApi, &creds, logger)
+		app.StartGRPC(setup, shutdown, app.HostGRPC(), createGrpcApi, &creds, log.Log)
 	}()
-	app.StartHTTP(setup, shutdown, app.HostHTTP(), createRestApi(logger))
+	app.StartHTTP(setup, shutdown, app.HostHTTP(), createRestApi(log.Log))
 }
 
 func setup() {

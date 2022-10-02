@@ -1,13 +1,13 @@
 package feed
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/api"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
 	"github.com/gin-gonic/gin"
 )
 
@@ -36,7 +36,7 @@ func GetFeed(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to get feed")
-		log.Printf("Unable to get feed: %s", err)
+		log.Error("Unable to get feed", err.Error())
 		return
 	}
 
@@ -69,7 +69,7 @@ func GetPost(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to get post")
-		log.Printf("Unable to get post: %s", err)
+		log.Error("Unable to get post", err.Error())
 		return
 	}
 
@@ -81,7 +81,7 @@ func Sync(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to sync feed")
-		log.Printf("Unable to sync feed: %s", err)
+		log.Error("Unable to sync feed", err.Error())
 		return
 	}
 
@@ -93,7 +93,7 @@ func Clear(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to clear feed")
-		log.Printf("Unable to clear feed: %s", err)
+		log.Error("Unable to clear feed", err.Error())
 		return
 	}
 

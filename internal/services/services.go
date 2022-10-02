@@ -2,11 +2,11 @@ package services
 
 import (
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/posts"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
@@ -34,15 +34,15 @@ func Instance() *Services {
 func createServices() *Services {
 	authCreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("AUTH_SERVICE_CLIENT_TLS_CERT_PATH"))
 	if err != nil {
-		log.Fatalf("unable to load TLS credentials")
+		log.Fatalf("unable to load TLS credentials: %s", err)
 	}
 	profilesCreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("PROFILES_SERVICE_CLIENT_TLS_CERT_PATH"))
 	if err != nil {
-		log.Fatalf("unable to load TLS credentials")
+		log.Fatalf("unable to load TLS credentials: %s", err)
 	}
 	postsCreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("POSTS_SERVICE_CLIENT_TLS_CERT_PATH"))
 	if err != nil {
-		log.Fatalf("unable to load TLS credentials")
+		log.Fatalf("unable to load TLS credentials: %s", err)
 	}
 	postsService := posts.CreatePostsGRPCService(utils.EnvVar("POSTS_SERVICE_GRPC_HOST")+":"+utils.EnvVar("POSTS_SERVICE_GRPC_PORT"), &postsCreds)
 	profilesService := profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilesCreds)
