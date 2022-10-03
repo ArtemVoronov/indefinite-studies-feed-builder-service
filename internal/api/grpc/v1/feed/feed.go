@@ -2,11 +2,11 @@ package feed
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
 	feedService "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/feed"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
 	"google.golang.org/grpc"
 )
 
@@ -19,8 +19,7 @@ func RegisterServiceServer(s *grpc.Server) {
 }
 
 func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.CreatePostRequest) (*feed.CreatePostReply, error) {
-	// TODO: use local cache for getting user name
-	user, err := services.Instance().Profiles().GetUser(int32(in.AuthorId))
+	user, err := s.getAndCacheUser(in.AuthorId)
 	if err != nil {
 		return nil, err
 	}
@@ -36,8 +35,7 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 }
 
 func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.UpdatePostRequest) (*feed.UpdatePostReply, error) {
-	// TODO: use local cache for getting user name
-	user, err := services.Instance().Profiles().GetUser(int32(in.AuthorId))
+	user, err := s.getAndCacheUser(in.AuthorId)
 	if err != nil {
 		return nil, err
 	}
@@ -61,8 +59,7 @@ func (s *FeedBuilderServiceServer) DeletePost(ctx context.Context, in *feed.Dele
 }
 
 func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.CreateCommentRequest) (*feed.CreateCommentReply, error) {
-	// TODO: use local cache for getting user name
-	user, err := services.Instance().Profiles().GetUser(int32(in.AuthorId))
+	user, err := s.getAndCacheUser(in.AuthorId)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +75,7 @@ func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.C
 }
 
 func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.UpdateCommentRequest) (*feed.UpdateCommentReply, error) {
-	// TODO: use local cache for getting user name
-	user, err := services.Instance().Profiles().GetUser(int32(in.AuthorId))
+	user, err := s.getAndCacheUser(in.AuthorId)
 	if err != nil {
 		return nil, err
 	}
@@ -103,11 +99,37 @@ func (s *FeedBuilderServiceServer) DeleteComment(ctx context.Context, in *feed.D
 }
 
 func (s *FeedBuilderServiceServer) UpdateUser(ctx context.Context, in *feed.UpdateUserRequest) (*feed.UpdateUserReply, error) {
-	// TODO:
-	return nil, fmt.Errorf("NOT IMPLEMENTED")
+	user := &profiles.GetUserResult{
+		Id:    int(in.GetId()),
+		Login: in.GetLogin(),
+		Email: in.GetEmail(),
+		Role:  in.GetRole(),
+		State: in.GetState(),
+	}
+	err := services.Instance().Feed().UpsertUser(user)
+	if err != nil {
+		return nil, err
+	}
+	err = services.Instance().Feed().SyncUserDataInFeed(user)
+	if err != nil {
+		return nil, err
+	}
+	return &feed.UpdateUserReply{}, nil
 }
 
-func (s *FeedBuilderServiceServer) DeleteUser(ctx context.Context, in *feed.DeleteUserRequest) (*feed.DeleteUserReply, error) {
-	// TODO:
-	return nil, fmt.Errorf("NOT IMPLEMENTED")
+func (s *FeedBuilderServiceServer) getAndCacheUser(authorId int32) (*profiles.GetUserResult, error) {
+	userId := int(authorId)
+
+	user, err := services.Instance().Feed().GetUser(userId)
+	if err != nil && err == feedService.ErrorRedisNotFound {
+		user, err = services.Instance().Profiles().GetUser(authorId)
+	}
+	if err != nil || user == nil {
+		return nil, err
+	}
+	err = services.Instance().Feed().UpsertUser(user)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }

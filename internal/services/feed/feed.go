@@ -3,6 +3,7 @@ package feed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -23,6 +24,8 @@ SORTEDSET1 (REDIS_FEED_KEY): [(create_date, post_id) ... (create_date, post_id)]
 HASHMAP2 (REDIS_COMMENTS_KEY): (comment_id) -> {full json comment info}
 SORTEDSET2 (post_id_comments): [(create_date, comment_id) ... (create_date, comment_id)]
 
+HASHMAP3 (REDIS_USERS_KEY): (user_id) -> {full json user info}
+
 Use-cases:
 1. create post -> add to HASHMAP1 and SORTEDSET1
 2. update post -> update key in HASHMAP1
@@ -42,12 +45,19 @@ Use-cases:
 9. sync feed:
 	- clear all collections (post_id_comments...), REDIS_POSTS_KEY, REDIS_FEED_KEY, REDIS_COMMENTS_KEY
 	- load all posts and comments from posts service via gGRPC
+
+10. update user -> update key in HASHMAP3 and iterate through all posts and comments, if AuthroId == user.id, then update the post and its comments
 */
 
 const (
 	REDIS_POSTS_KEY    = "posts"
 	REDIS_FEED_KEY     = "feed"
 	REDIS_COMMENTS_KEY = "comments"
+	REDIS_USERS_KEY    = "users"
+)
+
+var (
+	ErrorRedisNotFound = errors.New("REDIS_ERROR_NOT_FOUND")
 )
 
 type FeedBlock struct {
@@ -259,6 +269,93 @@ func (s *FeedService) GetPost(postId int) (*FullPostInfo, error) {
 	return result, err
 }
 
+func (s *FeedService) UpsertUser(user *profiles.GetUserResult) error {
+	userKey := UserKey(user.Id)
+	userVal, err := ToJsonString(user)
+	if err != nil {
+		return err
+	}
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+		return cli.HSet(ctx, REDIS_USERS_KEY, userKey, userVal).Err()
+	})()
+}
+
+func (s *FeedService) GetUser(userId int) (*profiles.GetUserResult, error) {
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+		return getUser(UserKey(userId), cli, ctx)
+	})()
+	if err != nil {
+		return nil, err
+	}
+	result, ok := data.(profiles.GetUserResult)
+	if !ok {
+		return nil, fmt.Errorf("unable cast to profiles.GetUserResult")
+	}
+	return &result, err
+}
+
+func (s *FeedService) SyncUserDataInFeed(user *profiles.GetUserResult) error {
+	return s.syncUserDataInPosts(user)
+}
+
+func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) error {
+	var offset int = 0
+	var limit int = 50
+
+	for {
+		data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+			postIds, err := getPostIds(offset, limit, cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, postId := range postIds {
+				post, err := getPost(PostKeyStr(postId), cli, ctx)
+				if err != nil {
+					return nil, err
+				}
+				if post.AuthorId == updatedUser.Id {
+					post.AuthorName = updatedUser.Login
+					s.UpdatePost(&post)
+				}
+				commentIds, err := getCommentsIds(PostCommentsKey(post.PostId), cli, ctx)
+				if err != nil {
+					return nil, err
+				}
+				comments, _, err := getComments(toCommentKeys(commentIds), cli, ctx)
+				if err != nil {
+					return nil, err
+				}
+				for _, comment := range comments {
+					if comment.AuthorId == updatedUser.Id {
+						comment.AuthorName = updatedUser.Login
+						s.UpdateComment(&comment)
+					}
+				}
+			}
+
+			return postIds, err
+		})()
+		if err != nil {
+			return fmt.Errorf("unable to SyncUserDataInFeed: %v", err)
+		}
+		postIds, ok := data.([]string)
+		if !ok {
+			return fmt.Errorf("unable to SyncUserDataInFeed: %v", "unable to cast to data to []string (as post ids)")
+		}
+		if len(postIds) <= 0 {
+			return nil
+		}
+
+		if len(postIds) < limit {
+			break
+		}
+
+		offset += limit
+	}
+
+	return nil
+}
+
 func (s *FeedService) Sync() error {
 	// TODO: check concurrent create/update/delete events during syncing
 	// TODO: add appropriate locks or op time comparings
@@ -316,6 +413,7 @@ func (s *FeedService) syncPosts() error {
 
 	return nil
 }
+
 func (s *FeedService) syncComments(postId int32) error {
 	var offset int32 = 0
 	var limit int32 = 50
@@ -448,6 +546,14 @@ func toUserIds(input any) ([]int32, error) {
 	}
 }
 
+func UserKey(userId int) string {
+	return UserKeyStr(strconv.Itoa(userId))
+}
+
+func UserKeyStr(userId string) string {
+	return "user_" + userId
+}
+
 func PostKey(postId int) string {
 	return PostKeyStr(strconv.Itoa(postId))
 }
@@ -499,6 +605,9 @@ func getCommentsIds(postCommentsKey string, cli *redis.Client, ctx context.Conte
 func getPost(postKey string, cli *redis.Client, ctx context.Context) (entities.FeedPost, error) {
 	var post entities.FeedPost
 	postStr, err := cli.HGet(ctx, REDIS_POSTS_KEY, postKey).Result()
+	if postStr == "" {
+		return post, ErrorRedisNotFound
+	}
 	if err != nil {
 		return post, fmt.Errorf("unable to get feed post: %v", err)
 	}
@@ -507,6 +616,22 @@ func getPost(postKey string, cli *redis.Client, ctx context.Context) (entities.F
 		return post, fmt.Errorf("unable to get unmarshal feed post: %v", err)
 	}
 	return post, nil
+}
+
+func getUser(userKey string, cli *redis.Client, ctx context.Context) (profiles.GetUserResult, error) {
+	var user profiles.GetUserResult
+	userStr, err := cli.HGet(ctx, REDIS_USERS_KEY, userKey).Result()
+	if userStr == "" {
+		return user, ErrorRedisNotFound
+	}
+	if err != nil {
+		return user, fmt.Errorf("unable to get feed user: %v", err)
+	}
+	err = json.Unmarshal([]byte(userStr), &user)
+	if err != nil {
+		return user, fmt.Errorf("unable to unmarshal feed user: %v. userStr: %v", err, userStr)
+	}
+	return user, nil
 }
 
 func getCommentsCount(postCommentsKey string, cli *redis.Client, ctx context.Context) (int64, error) {
