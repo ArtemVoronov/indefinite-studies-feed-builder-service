@@ -23,9 +23,9 @@ func Start() {
 	log.SetUpLogPath(utils.EnvVarDefault("APP_LOGS_PATH", "stdout"))
 	creds := app.TLSCredentials()
 	go func() {
-		app.StartGRPC(setup, shutdown, app.HostGRPC(), createGrpcApi, &creds, log.Log)
+		app.StartGRPC(setup, shutdown, app.HostGRPC(), createGrpcApi, &creds, log.Instance())
 	}()
-	app.StartHTTP(setup, shutdown, app.HostHTTP(), createRestApi(log.Log))
+	app.StartHTTP(setup, shutdown, app.HostHTTP(), createRestApi(log.Instance()))
 }
 
 func setup() {
