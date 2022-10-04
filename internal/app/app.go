@@ -20,7 +20,10 @@ import (
 
 func Start() {
 	app.LoadEnv()
-	log.SetUpLogPath(utils.EnvVarDefault("APP_LOGS_PATH", "stdout"))
+	file := log.SetUpLogPath(utils.EnvVarDefault("APP_LOGS_PATH", "stdout"))
+	if file != nil {
+		defer file.Close()
+	}
 	creds := app.TLSCredentials()
 	go func() {
 		app.StartGRPC(setup, shutdown, app.HostGRPC(), createGrpcApi, &creds, log.Instance())
