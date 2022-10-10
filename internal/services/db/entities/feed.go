@@ -3,7 +3,7 @@ package entities
 import "time"
 
 type FeedPost struct {
-	PostId          int
+	PostUuid        string
 	PostText        string
 	PostPreviewText string
 	PostTopic       string
@@ -16,11 +16,12 @@ type FeedPost struct {
 
 type FeedComment struct {
 	CommentId       int
+	CommentUuid     string
 	CommentText     string
 	CommentState    string
 	AuthorId        int
 	AuthorName      string
-	PostId          int
+	PostUuid        string
 	LinkedCommentId *int
 	CreateDate      time.Time
 	LastUpdateDate  time.Time

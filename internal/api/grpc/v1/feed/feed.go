@@ -51,7 +51,7 @@ func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.Upda
 }
 
 func (s *FeedBuilderServiceServer) DeletePost(ctx context.Context, in *feed.DeletePostRequest) (*feed.DeletePostReply, error) {
-	err := services.Instance().Feed().DeletePost(int(in.GetId()))
+	err := services.Instance().Feed().DeletePost(in.GetUuid())
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.U
 }
 
 func (s *FeedBuilderServiceServer) DeleteComment(ctx context.Context, in *feed.DeleteCommentRequest) (*feed.DeleteCommentReply, error) {
-	err := services.Instance().Feed().DeleteComment(int(in.GetPostId()), int(in.GetCommentId()))
+	err := services.Instance().Feed().DeleteComment(in.GetPostUuid(), in.GetUuid())
 	if err != nil {
 		return nil, err
 	}

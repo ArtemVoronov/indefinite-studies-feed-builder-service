@@ -51,22 +51,15 @@ func GetFeed(c *gin.Context) {
 }
 
 func GetPost(c *gin.Context) {
-	postIdStr := c.Param("id")
+	postUuid := c.Param("uuid")
 
-	if postIdStr == "" {
-		c.JSON(http.StatusBadRequest, "Missed ID")
+	if postUuid == "" {
+		c.JSON(http.StatusBadRequest, "Missed 'uuid' parameter")
 		return
 	}
 
-	var postId int
-	var parseErr error
-	if postId, parseErr = strconv.Atoi(postIdStr); parseErr != nil {
-		c.JSON(http.StatusBadRequest, api.ERROR_ID_WRONG_FORMAT)
-		return
-	}
-
-	result, err := services.Instance().Feed().GetPost(postId)
-
+	// TODO: process NOT_FOUND case
+	result, err := services.Instance().Feed().GetPost(postUuid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to get post")
 		log.Error("Unable to get post", err.Error())
