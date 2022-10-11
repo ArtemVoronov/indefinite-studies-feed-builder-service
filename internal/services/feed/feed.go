@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/posts"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
@@ -364,53 +365,67 @@ func (s *FeedService) Sync() error {
 }
 
 func (s *FeedService) syncPosts() error {
-	var offset int32 = 0
-	var limit int32 = 50
+	var shardCount int32 = -1
+	var shard int32 = 0
 	for {
-		postReplies, err := s.postsService.GetPosts(offset, limit)
-		if err != nil {
-			return fmt.Errorf("unable to syncPosts: %v", err)
-		}
-		if len(postReplies) <= 0 {
-			return nil
-		}
-
-		userIds, err := toUserIds(postReplies)
-		if err != nil {
-			return fmt.Errorf("unable to syncPosts: %v", err)
-		}
-		userReplies, err := s.getUsers(userIds)
-		if err != nil {
-			return fmt.Errorf("unable to syncPosts: %v", err)
-		}
-		usersById := make(map[int]string)
-		for _, userReply := range userReplies {
-			usersById[userReply.Id] = userReply.Login
-		}
-		for _, postReply := range postReplies {
-			authorName, ok := usersById[postReply.AuthorId]
-			if !ok {
-				return fmt.Errorf("unable to syncPosts, unable to find author with id: %v", postReply.AuthorId)
+		var offset int32 = 0
+		var limit int32 = 50
+		for {
+			reply, err := s.postsService.GetPosts(offset, limit, shard)
+			if err != nil {
+				return fmt.Errorf("unable to syncPosts: %v", err)
 			}
-			feedPost, convertErr := ToFeedPost(postReply, authorName)
-			if convertErr != nil {
-				return fmt.Errorf("unable to syncPosts: %v", convertErr)
+			if shardCount < 0 {
+				shardCount = reply.GetShardsCount()
+				log.Info(fmt.Sprintf("posts shard coount: %v", shardCount))
+			}
+			postReplies := posts.ToGetPostsResultSlice(reply.GetPosts())
+			if len(postReplies) <= 0 {
+				return nil
 			}
 
-			createFeedPostErr := s.CreatePost(feedPost)
-			if createFeedPostErr != nil {
-				return fmt.Errorf("unable to syncPosts, unable save to store the feed post with Uuid: %v", feedPost.PostUuid)
+			userIds, err := toUserIds(postReplies)
+			if err != nil {
+				return fmt.Errorf("unable to syncPosts: %v", err)
 			}
-			s.syncComments(postReply.Uuid)
+			userReplies, err := s.getUsers(userIds)
+			if err != nil {
+				return fmt.Errorf("unable to syncPosts: %v", err)
+			}
+			usersById := make(map[int]string)
+			for _, userReply := range userReplies {
+				usersById[userReply.Id] = userReply.Login
+			}
+			for _, postReply := range postReplies {
+				authorName, ok := usersById[postReply.AuthorId]
+				if !ok {
+					return fmt.Errorf("unable to syncPosts, unable to find author with id: %v", postReply.AuthorId)
+				}
+				feedPost, convertErr := ToFeedPost(postReply, authorName)
+				if convertErr != nil {
+					return fmt.Errorf("unable to syncPosts: %v", convertErr)
+				}
+
+				createFeedPostErr := s.CreatePost(feedPost)
+				if createFeedPostErr != nil {
+					return fmt.Errorf("unable to syncPosts, unable save to store the feed post with Uuid: %v", feedPost.PostUuid)
+				}
+				s.syncComments(postReply.Uuid)
+			}
+
+			if len(postReplies) < int(limit) {
+				break
+			}
+
+			offset += limit
 		}
 
-		if len(postReplies) < int(limit) {
+		shard += 1
+
+		if int(shard) >= int(shardCount) {
 			break
 		}
-
-		offset += limit
 	}
-
 	return nil
 }
 
@@ -530,17 +545,25 @@ func (s *FeedService) getUsers(userIds []int32) ([]profiles.GetUserResult, error
 func toUserIds(input any) ([]int32, error) {
 	switch t := input.(type) {
 	case []posts.GetPostResult:
-		result := make([]int32, len(t))
-		for i, p := range t {
-			result[i] = int32(p.AuthorId)
+		m := make(map[int]int)
+		for _, p := range t {
+			m[p.AuthorId] = p.AuthorId
 		}
-		return result, nil
+		keys := []int32{}
+		for k := range m {
+			keys = append(keys, int32(k))
+		}
+		return keys, nil
 	case []posts.GetCommentResult:
-		result := make([]int32, len(t))
-		for i, c := range t {
-			result[i] = int32(c.AuthorId)
+		m := make(map[int]int)
+		for _, c := range t {
+			m[c.AuthorId] = c.AuthorId
 		}
-		return result, nil
+		keys := []int32{}
+		for k := range m {
+			keys = append(keys, int32(k))
+		}
+		return keys, nil
 	default:
 		return nil, fmt.Errorf("unknown type of input for 'toUserIds' func: %T", t)
 	}
