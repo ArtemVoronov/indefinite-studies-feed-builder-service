@@ -12,6 +12,7 @@ type FeedPost struct {
 	AuthorName      string
 	CreateDate      time.Time
 	LastUpdateDate  time.Time
+	Tags            []string
 }
 
 type FeedComment struct {

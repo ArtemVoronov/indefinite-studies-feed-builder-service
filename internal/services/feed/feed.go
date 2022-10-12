@@ -69,6 +69,7 @@ type FeedBlock struct {
 	AuthorName      string
 	CreateDate      time.Time
 	CommentsCount   int64
+	Tags            []string
 }
 
 type FullPostInfo struct {
@@ -691,6 +692,7 @@ func toFeedBlock(post *entities.FeedPost, commentsCount int64) FeedBlock {
 		AuthorName:      post.AuthorName,
 		CreateDate:      post.CreateDate,
 		CommentsCount:   commentsCount,
+		Tags:            post.Tags,
 	}
 }
 
@@ -715,6 +717,7 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 			PostState:       t.State,
 			CreateDate:      t.CreateDate.AsTime(),
 			LastUpdateDate:  t.LastUpdateDate.AsTime(),
+			Tags:            convertTags(t.Tags),
 		}, nil
 	case *feed.UpdatePostRequest:
 		return &entities.FeedPost{
@@ -727,6 +730,7 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 			PostState:       t.State,
 			CreateDate:      t.CreateDate.AsTime(),
 			LastUpdateDate:  t.LastUpdateDate.AsTime(),
+			Tags:            convertTags(t.Tags),
 		}, nil
 	case posts.GetPostResult:
 		return &entities.FeedPost{
@@ -739,6 +743,7 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 			PostState:       t.State,
 			CreateDate:      t.CreateDate,
 			LastUpdateDate:  t.LastUpdateDate,
+			Tags:            convertTags(t.Tags),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown type of post: %T", post)
@@ -797,4 +802,11 @@ func toLinkedCommentIdPrt(val int32) *int {
 	}
 	result := int(val)
 	return &result
+}
+
+func convertTags(in []string) []string {
+	if len(in) == 0 {
+		return []string{}
+	}
+	return in
 }
