@@ -8,7 +8,7 @@ type FeedPost struct {
 	PostPreviewText string
 	PostTopic       string
 	PostState       string
-	AuthorId        int
+	AuthorUuid      string
 	AuthorName      string
 	CreateDate      time.Time
 	LastUpdateDate  time.Time
@@ -20,7 +20,7 @@ type FeedComment struct {
 	CommentUuid     string
 	CommentText     string
 	CommentState    string
-	AuthorId        int
+	AuthorUuid      string
 	AuthorName      string
 	PostUuid        string
 	LinkedCommentId *int

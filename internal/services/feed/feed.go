@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
@@ -65,7 +64,7 @@ type FeedBlock struct {
 	PostUuid        string
 	PostPreviewText string
 	PostTopic       string
-	AuthorId        int
+	AuthorUuid      string
 	AuthorName      string
 	CreateDate      time.Time
 	CommentsCount   int64
@@ -272,7 +271,7 @@ func (s *FeedService) GetPost(postUuid string) (*FullPostInfo, error) {
 }
 
 func (s *FeedService) UpsertUser(user *profiles.GetUserResult) error {
-	userKey := UserKey(user.Id)
+	userKey := UserKey(user.Uuid)
 	userVal, err := ToJsonString(user)
 	if err != nil {
 		return err
@@ -282,9 +281,9 @@ func (s *FeedService) UpsertUser(user *profiles.GetUserResult) error {
 	})()
 }
 
-func (s *FeedService) GetUser(userId int) (*profiles.GetUserResult, error) {
+func (s *FeedService) GetUser(userUuid string) (*profiles.GetUserResult, error) {
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
-		return getUser(UserKey(userId), cli, ctx)
+		return getUser(UserKey(userUuid), cli, ctx)
 	})()
 	if err != nil {
 		return nil, err
@@ -315,7 +314,7 @@ func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) e
 				if err != nil {
 					return nil, err
 				}
-				if post.AuthorId == updatedUser.Id {
+				if post.AuthorUuid == updatedUser.Uuid {
 					post.AuthorName = updatedUser.Login
 					s.UpdatePost(&post)
 				}
@@ -328,7 +327,7 @@ func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) e
 					return nil, err
 				}
 				for _, comment := range comments {
-					if comment.AuthorId == updatedUser.Id {
+					if comment.AuthorUuid == updatedUser.Uuid {
 						comment.AuthorName = updatedUser.Login
 						s.UpdateComment(&comment)
 					}
@@ -361,8 +360,58 @@ func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) e
 func (s *FeedService) Sync() error {
 	// TODO: check concurrent create/update/delete events during syncing
 	// TODO: add appropriate locks or op time comparings
-	s.ClearFeed()
+	err := s.ClearFeed()
+	if err != nil {
+		return err
+	}
+	err = s.syncUsers()
+	if err != nil {
+		return err
+	}
 	return s.syncPosts()
+}
+
+func (s *FeedService) syncUsers() error {
+	var shardCount int32 = -1
+	var shard int32 = 0
+	for {
+		var offset int32 = 0
+		var limit int32 = 50
+		for {
+			reply, err := s.profilesService.GetUsers(offset, limit, shard)
+			if err != nil {
+				return fmt.Errorf("unable to syncUsers: %v", err)
+			}
+			if shardCount < 0 {
+				shardCount = reply.GetShardsCount()
+				log.Info(fmt.Sprintf("users shard count: %v", shardCount))
+			}
+			userReplies := profiles.ToGetGetUserResultSlice(reply.GetUsers())
+			if len(userReplies) <= 0 {
+				return nil
+			}
+
+			for _, user := range userReplies {
+				err := s.UpsertUser(&user)
+				if err != nil {
+					return fmt.Errorf("unable to syncUsers: %v", err)
+				}
+			}
+
+			if len(userReplies) < int(limit) {
+				break
+			}
+
+			offset += limit
+		}
+
+		shard += 1
+
+		if int(shard) >= int(shardCount) {
+			break
+		}
+	}
+	return nil
 }
 
 func (s *FeedService) syncPosts() error {
@@ -378,31 +427,18 @@ func (s *FeedService) syncPosts() error {
 			}
 			if shardCount < 0 {
 				shardCount = reply.GetShardsCount()
-				log.Info(fmt.Sprintf("posts shard coount: %v", shardCount))
+				log.Info(fmt.Sprintf("posts shard count: %v", shardCount))
 			}
 			postReplies := posts.ToGetPostsResultSlice(reply.GetPosts())
 			if len(postReplies) <= 0 {
 				return nil
 			}
-
-			userIds, err := toUserIds(postReplies)
-			if err != nil {
-				return fmt.Errorf("unable to syncPosts: %v", err)
-			}
-			userReplies, err := s.getUsers(userIds)
-			if err != nil {
-				return fmt.Errorf("unable to syncPosts: %v", err)
-			}
-			usersById := make(map[int]string)
-			for _, userReply := range userReplies {
-				usersById[userReply.Id] = userReply.Login
-			}
 			for _, postReply := range postReplies {
-				authorName, ok := usersById[postReply.AuthorId]
-				if !ok {
-					return fmt.Errorf("unable to syncPosts, unable to find author with id: %v", postReply.AuthorId)
+				user, err := s.GetUser(postReply.AuthorUuid)
+				if err != nil {
+					return fmt.Errorf("unable to syncPosts due to problem of getting user from cache: %v", err)
 				}
-				feedPost, convertErr := ToFeedPost(postReply, authorName)
+				feedPost, convertErr := ToFeedPost(postReply, user.Login)
 				if convertErr != nil {
 					return fmt.Errorf("unable to syncPosts: %v", convertErr)
 				}
@@ -441,25 +477,12 @@ func (s *FeedService) syncComments(postUuid string) error {
 		if len(commentReplies) <= 0 {
 			return nil
 		}
-
-		userIds, err := toUserIds(commentReplies)
-		if err != nil {
-			return fmt.Errorf("unable to syncComments: %v", err)
-		}
-		userReplies, err := s.getUsers(userIds)
-		if err != nil {
-			return fmt.Errorf("unable to syncComments: %v", err)
-		}
-		usersById := make(map[int]string)
-		for _, userReply := range userReplies {
-			usersById[userReply.Id] = userReply.Login
-		}
 		for _, commentReply := range commentReplies {
-			authorName, ok := usersById[commentReply.AuthorId]
-			if !ok {
-				return fmt.Errorf("unable to syncComments, unable to find author with id: %v", commentReply.AuthorId)
+			user, err := s.GetUser(commentReply.AuthorUuid)
+			if err != nil {
+				return fmt.Errorf("unable to syncComments due to problem of getting user from cache: %v", err)
 			}
-			feedComment, convertErr := ToFeedComment(commentReply, authorName)
+			feedComment, convertErr := ToFeedComment(commentReply, user.Login)
 			if convertErr != nil {
 				return fmt.Errorf("unable to syncComments: %v", convertErr)
 			}
@@ -524,58 +547,8 @@ func (s *FeedService) ClearFeed() error {
 	})()
 }
 
-func (s *FeedService) getUsers(userIds []int32) ([]profiles.GetUserResult, error) {
-	var offset int32 = 0
-	var limit int32 = 50
-	result := []profiles.GetUserResult{}
-	for {
-		userReplies, err := s.profilesService.GetUsers(offset, limit, userIds)
-		if err != nil {
-			return result, fmt.Errorf("unable to getUsers via gRPC: %v", err)
-		}
-		if len(userReplies) <= 0 {
-			return result, nil
-		}
-
-		result = append(result, userReplies...)
-
-		offset += limit
-	}
-}
-
-func toUserIds(input any) ([]int32, error) {
-	switch t := input.(type) {
-	case []posts.GetPostResult:
-		m := make(map[int]int)
-		for _, p := range t {
-			m[p.AuthorId] = p.AuthorId
-		}
-		keys := []int32{}
-		for k := range m {
-			keys = append(keys, int32(k))
-		}
-		return keys, nil
-	case []posts.GetCommentResult:
-		m := make(map[int]int)
-		for _, c := range t {
-			m[c.AuthorId] = c.AuthorId
-		}
-		keys := []int32{}
-		for k := range m {
-			keys = append(keys, int32(k))
-		}
-		return keys, nil
-	default:
-		return nil, fmt.Errorf("unknown type of input for 'toUserIds' func: %T", t)
-	}
-}
-
-func UserKey(userId int) string {
-	return UserKeyStr(strconv.Itoa(userId))
-}
-
-func UserKeyStr(userId string) string {
-	return "user_" + userId
+func UserKey(userUuid string) string {
+	return "user_" + userUuid
 }
 
 func PostKey(postUuid string) string {
@@ -688,7 +661,7 @@ func toFeedBlock(post *entities.FeedPost, commentsCount int64) FeedBlock {
 		PostUuid:        post.PostUuid,
 		PostPreviewText: post.PostPreviewText,
 		PostTopic:       post.PostTopic,
-		AuthorId:        post.AuthorId,
+		AuthorUuid:      post.AuthorUuid,
 		AuthorName:      post.AuthorName,
 		CreateDate:      post.CreateDate,
 		CommentsCount:   commentsCount,
@@ -708,7 +681,7 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 	switch t := post.(type) {
 	case *feed.CreatePostRequest:
 		return &entities.FeedPost{
-			AuthorId:        int(t.AuthorId),
+			AuthorUuid:      t.AuthorUuid,
 			AuthorName:      authorName,
 			PostUuid:        t.Uuid,
 			PostText:        t.Text,
@@ -721,7 +694,7 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 		}, nil
 	case *feed.UpdatePostRequest:
 		return &entities.FeedPost{
-			AuthorId:        int(t.AuthorId),
+			AuthorUuid:      t.AuthorUuid,
 			AuthorName:      authorName,
 			PostUuid:        t.Uuid,
 			PostText:        t.Text,
@@ -734,7 +707,7 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 		}, nil
 	case posts.GetPostResult:
 		return &entities.FeedPost{
-			AuthorId:        t.AuthorId,
+			AuthorUuid:      t.AuthorUuid,
 			AuthorName:      authorName,
 			PostUuid:        t.Uuid,
 			PostText:        t.Text,
@@ -754,7 +727,7 @@ func ToFeedComment(comment any, authorName string) (*entities.FeedComment, error
 	switch t := comment.(type) {
 	case *feed.CreateCommentRequest:
 		return &entities.FeedComment{
-			AuthorId:        int(t.AuthorId),
+			AuthorUuid:      t.AuthorUuid,
 			AuthorName:      authorName,
 			PostUuid:        t.PostUuid,
 			LinkedCommentId: toLinkedCommentIdPrt(t.LinkedCommentId),
@@ -767,7 +740,7 @@ func ToFeedComment(comment any, authorName string) (*entities.FeedComment, error
 		}, nil
 	case *feed.UpdateCommentRequest:
 		return &entities.FeedComment{
-			AuthorId:        int(t.AuthorId),
+			AuthorUuid:      t.AuthorUuid,
 			AuthorName:      authorName,
 			PostUuid:        t.PostUuid,
 			LinkedCommentId: toLinkedCommentIdPrt(t.LinkedCommentId),
@@ -780,7 +753,7 @@ func ToFeedComment(comment any, authorName string) (*entities.FeedComment, error
 		}, nil
 	case posts.GetCommentResult:
 		return &entities.FeedComment{
-			AuthorId:        t.AuthorId,
+			AuthorUuid:      t.AuthorUuid,
 			AuthorName:      authorName,
 			PostUuid:        t.PostUuid,
 			LinkedCommentId: t.LinkedCommentId,

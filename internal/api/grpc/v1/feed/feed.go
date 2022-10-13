@@ -19,7 +19,7 @@ func RegisterServiceServer(s *grpc.Server) {
 }
 
 func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.CreatePostRequest) (*feed.CreatePostReply, error) {
-	user, err := s.getAndCacheUser(in.AuthorId)
+	user, err := s.getAndCacheUser(in.AuthorUuid)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 }
 
 func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.UpdatePostRequest) (*feed.UpdatePostReply, error) {
-	user, err := s.getAndCacheUser(in.AuthorId)
+	user, err := s.getAndCacheUser(in.AuthorUuid)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (s *FeedBuilderServiceServer) DeletePost(ctx context.Context, in *feed.Dele
 }
 
 func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.CreateCommentRequest) (*feed.CreateCommentReply, error) {
-	user, err := s.getAndCacheUser(in.AuthorId)
+	user, err := s.getAndCacheUser(in.AuthorUuid)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.C
 }
 
 func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.UpdateCommentRequest) (*feed.UpdateCommentReply, error) {
-	user, err := s.getAndCacheUser(in.AuthorId)
+	user, err := s.getAndCacheUser(in.AuthorUuid)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (s *FeedBuilderServiceServer) DeleteComment(ctx context.Context, in *feed.D
 
 func (s *FeedBuilderServiceServer) UpdateUser(ctx context.Context, in *feed.UpdateUserRequest) (*feed.UpdateUserReply, error) {
 	user := &profiles.GetUserResult{
-		Id:    int(in.GetId()),
+		Uuid:  in.GetUuid(),
 		Login: in.GetLogin(),
 		Email: in.GetEmail(),
 		Role:  in.GetRole(),
@@ -117,12 +117,10 @@ func (s *FeedBuilderServiceServer) UpdateUser(ctx context.Context, in *feed.Upda
 	return &feed.UpdateUserReply{}, nil
 }
 
-func (s *FeedBuilderServiceServer) getAndCacheUser(authorId int32) (*profiles.GetUserResult, error) {
-	userId := int(authorId)
-
-	user, err := services.Instance().Feed().GetUser(userId)
+func (s *FeedBuilderServiceServer) getAndCacheUser(authorUuid string) (*profiles.GetUserResult, error) {
+	user, err := services.Instance().Feed().GetUser(authorUuid)
 	if err != nil && err == feedService.ErrorRedisNotFound {
-		user, err = services.Instance().Profiles().GetUser(authorId)
+		user, err = services.Instance().Profiles().GetUser(authorUuid)
 	}
 	if err != nil || user == nil {
 		return nil, err
