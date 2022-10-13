@@ -15,16 +15,15 @@ type FeedPost struct {
 	Tags            []string
 }
 
-// TODO: use UUID at LinkedCommentId field
 type FeedComment struct {
-	CommentId       int
-	CommentUuid     string
-	CommentText     string
-	CommentState    string
-	AuthorUuid      string
-	AuthorName      string
-	PostUuid        string
-	LinkedCommentId *int
-	CreateDate      time.Time
-	LastUpdateDate  time.Time
+	CommentId         int
+	CommentUuid       string
+	CommentText       string
+	CommentState      string
+	AuthorUuid        string
+	AuthorName        string
+	PostUuid          string
+	LinkedCommentUuid string
+	CreateDate        time.Time
+	LastUpdateDate    time.Time
 }

@@ -74,7 +74,7 @@ type FeedBlock struct {
 type FullPostInfo struct {
 	Post        entities.FeedPost
 	Comments    []entities.FeedComment
-	CommentsMap map[int]FeedCommentWithIndex
+	CommentsMap map[string]FeedCommentWithIndex
 }
 
 type FeedService struct {
@@ -491,7 +491,7 @@ func (s *FeedService) syncComments(postUuid string) error {
 
 			createFeedCommentErr := s.CreateComment(feedComment)
 			if createFeedCommentErr != nil {
-				return fmt.Errorf("unable to syncComments, unable save to store the feed comment with ID: %v. Post UUID: %v", feedComment.CommentId, feedComment.PostUuid)
+				return fmt.Errorf("unable to syncComments, unable save to store the feed comment with UUID: %v. Post UUID: %v", feedComment.CommentUuid, feedComment.PostUuid)
 			}
 		}
 
@@ -629,9 +629,9 @@ func getCommentsCount(postCommentsKey string, cli *redis.Client, ctx context.Con
 	return commentsCount, nil
 }
 
-func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) ([]entities.FeedComment, map[int]FeedCommentWithIndex, error) {
+func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) ([]entities.FeedComment, map[string]FeedCommentWithIndex, error) {
 	resultComments := make([]entities.FeedComment, 0)
-	resultCommentsMap := make(map[int]FeedCommentWithIndex)
+	resultCommentsMap := make(map[string]FeedCommentWithIndex)
 
 	if len(commentKeys) <= 0 {
 		return resultComments, resultCommentsMap, nil
@@ -653,7 +653,7 @@ func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) (
 			return nil, nil, fmt.Errorf("unable to get unmarshal feed comment: %v", err)
 		}
 		resultComments = append(resultComments, comment)
-		resultCommentsMap[comment.CommentId] = FeedCommentWithIndex{Index: commentIndex, FeedComment: comment}
+		resultCommentsMap[comment.CommentUuid] = FeedCommentWithIndex{Index: commentIndex, FeedComment: comment}
 	}
 	return resultComments, resultCommentsMap, nil
 }
@@ -729,54 +729,46 @@ func ToFeedComment(comment any, authorName string) (*entities.FeedComment, error
 	switch t := comment.(type) {
 	case *feed.CreateCommentRequest:
 		return &entities.FeedComment{
-			AuthorUuid:      t.AuthorUuid,
-			AuthorName:      authorName,
-			PostUuid:        t.PostUuid,
-			LinkedCommentId: toLinkedCommentIdPrt(t.LinkedCommentId),
-			CommentId:       int(t.Id),
-			CommentUuid:     t.Uuid,
-			CommentText:     t.Text,
-			CommentState:    t.State,
-			CreateDate:      t.CreateDate.AsTime(),
-			LastUpdateDate:  t.LastUpdateDate.AsTime(),
+			AuthorUuid:        t.AuthorUuid,
+			AuthorName:        authorName,
+			PostUuid:          t.PostUuid,
+			LinkedCommentUuid: t.LinkedCommentUuid,
+			CommentId:         int(t.Id),
+			CommentUuid:       t.Uuid,
+			CommentText:       t.Text,
+			CommentState:      t.State,
+			CreateDate:        t.CreateDate.AsTime(),
+			LastUpdateDate:    t.LastUpdateDate.AsTime(),
 		}, nil
 	case *feed.UpdateCommentRequest:
 		return &entities.FeedComment{
-			AuthorUuid:      t.AuthorUuid,
-			AuthorName:      authorName,
-			PostUuid:        t.PostUuid,
-			LinkedCommentId: toLinkedCommentIdPrt(t.LinkedCommentId),
-			CommentId:       int(t.Id),
-			CommentUuid:     t.Uuid,
-			CommentText:     t.Text,
-			CommentState:    t.State,
-			CreateDate:      t.CreateDate.AsTime(),
-			LastUpdateDate:  t.LastUpdateDate.AsTime(),
+			AuthorUuid:        t.AuthorUuid,
+			AuthorName:        authorName,
+			PostUuid:          t.PostUuid,
+			LinkedCommentUuid: t.LinkedCommentUuid,
+			CommentId:         int(t.Id),
+			CommentUuid:       t.Uuid,
+			CommentText:       t.Text,
+			CommentState:      t.State,
+			CreateDate:        t.CreateDate.AsTime(),
+			LastUpdateDate:    t.LastUpdateDate.AsTime(),
 		}, nil
 	case posts.GetCommentResult:
 		return &entities.FeedComment{
-			AuthorUuid:      t.AuthorUuid,
-			AuthorName:      authorName,
-			PostUuid:        t.PostUuid,
-			LinkedCommentId: t.LinkedCommentId,
-			CommentId:       t.Id,
-			CommentUuid:     t.Uuid,
-			CommentText:     t.Text,
-			CommentState:    t.State,
-			CreateDate:      t.CreateDate,
-			LastUpdateDate:  t.LastUpdateDate,
+			AuthorUuid:        t.AuthorUuid,
+			AuthorName:        authorName,
+			PostUuid:          t.PostUuid,
+			LinkedCommentUuid: t.LinkedCommentUuid,
+			CommentId:         t.Id,
+			CommentUuid:       t.Uuid,
+			CommentText:       t.Text,
+			CommentState:      t.State,
+			CreateDate:        t.CreateDate,
+			LastUpdateDate:    t.LastUpdateDate,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown type of comment: %T", comment)
 	}
-}
-
-func toLinkedCommentIdPrt(val int32) *int {
-	if val == 0 {
-		return nil
-	}
-	result := int(val)
-	return &result
 }
 
 func convertTags(in []string) []string {
