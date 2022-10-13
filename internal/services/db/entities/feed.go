@@ -15,6 +15,7 @@ type FeedPost struct {
 	Tags            []string
 }
 
+// TODO: use UUID at LinkedCommentId field
 type FeedComment struct {
 	CommentId       int
 	CommentUuid     string
