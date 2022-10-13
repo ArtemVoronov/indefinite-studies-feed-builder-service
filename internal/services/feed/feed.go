@@ -386,19 +386,20 @@ func (s *FeedService) syncUsers() error {
 				shardCount = reply.GetShardsCount()
 				log.Info(fmt.Sprintf("users shard count: %v", shardCount))
 			}
-			userReplies := profiles.ToGetGetUserResultSlice(reply.GetUsers())
-			if len(userReplies) <= 0 {
-				return nil
+			users := profiles.ToGetGetUserResultSlice(reply.GetUsers())
+
+			if len(users) <= 0 {
+				break
 			}
 
-			for _, user := range userReplies {
+			for _, user := range users {
 				err := s.UpsertUser(&user)
 				if err != nil {
 					return fmt.Errorf("unable to syncUsers: %v", err)
 				}
 			}
 
-			if len(userReplies) < int(limit) {
+			if len(users) < int(limit) {
 				break
 			}
 
@@ -429,16 +430,17 @@ func (s *FeedService) syncPosts() error {
 				shardCount = reply.GetShardsCount()
 				log.Info(fmt.Sprintf("posts shard count: %v", shardCount))
 			}
-			postReplies := posts.ToGetPostsResultSlice(reply.GetPosts())
-			if len(postReplies) <= 0 {
-				return nil
+			posts := posts.ToGetPostsResultSlice(reply.GetPosts())
+
+			if len(posts) <= 0 {
+				break
 			}
-			for _, postReply := range postReplies {
-				user, err := s.GetUser(postReply.AuthorUuid)
+			for _, post := range posts {
+				user, err := s.GetUser(post.AuthorUuid)
 				if err != nil {
 					return fmt.Errorf("unable to syncPosts due to problem of getting user from cache: %v", err)
 				}
-				feedPost, convertErr := ToFeedPost(postReply, user.Login)
+				feedPost, convertErr := ToFeedPost(post, user.Login)
 				if convertErr != nil {
 					return fmt.Errorf("unable to syncPosts: %v", convertErr)
 				}
@@ -447,10 +449,10 @@ func (s *FeedService) syncPosts() error {
 				if createFeedPostErr != nil {
 					return fmt.Errorf("unable to syncPosts, unable save to store the feed post with Uuid: %v", feedPost.PostUuid)
 				}
-				s.syncComments(postReply.Uuid)
+				s.syncComments(post.Uuid)
 			}
 
-			if len(postReplies) < int(limit) {
+			if len(posts) < int(limit) {
 				break
 			}
 
