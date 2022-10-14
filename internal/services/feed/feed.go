@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
@@ -81,6 +82,7 @@ type FeedService struct {
 	redisService    *redisService.RedisService
 	postsService    *posts.PostsGRPCService
 	profilesService *profiles.ProfilesGRPCService
+	SyncGuard       sync.RWMutex
 }
 
 type FeedCommentWithIndex struct {
@@ -217,6 +219,8 @@ func (s *FeedService) DeleteComment(postUuid string, commentUuid string) error {
 }
 
 func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
+	s.SyncGuard.RLock()
+	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		postUuids, err := getPostUuids(offset, limit, cli, ctx)
 		if err != nil {
@@ -247,6 +251,8 @@ func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 }
 
 func (s *FeedService) GetPost(postUuid string) (*FullPostInfo, error) {
+	s.SyncGuard.RLock()
+	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		resultPost, err := getPost(PostKey(postUuid), cli, ctx)
 		if err != nil {
@@ -361,13 +367,9 @@ func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) e
 }
 
 func (s *FeedService) Sync() error {
-	// TODO: check concurrent create/update/delete events during syncing
-	// TODO: add appropriate locks or op time comparings
-	err := s.clear()
-	if err != nil {
-		return err
-	}
-	err = s.syncUsers()
+	s.SyncGuard.Lock()
+	defer s.SyncGuard.Unlock()
+	err := s.syncUsers()
 	if err != nil {
 		return err
 	}
@@ -375,6 +377,8 @@ func (s *FeedService) Sync() error {
 }
 
 func (s *FeedService) Clear() error {
+	s.SyncGuard.Lock()
+	defer s.SyncGuard.Unlock()
 	return s.clear()
 }
 

@@ -19,6 +19,8 @@ func RegisterServiceServer(s *grpc.Server) {
 }
 
 func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.CreatePostRequest) (*feed.CreatePostReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
 	user, err := s.getAndCacheUser(in.AuthorUuid)
 	if err != nil {
 		return nil, err
@@ -35,6 +37,8 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 }
 
 func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.UpdatePostRequest) (*feed.UpdatePostReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
 	user, err := s.getAndCacheUser(in.AuthorUuid)
 	if err != nil {
 		return nil, err
@@ -51,6 +55,8 @@ func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.Upda
 }
 
 func (s *FeedBuilderServiceServer) DeletePost(ctx context.Context, in *feed.DeletePostRequest) (*feed.DeletePostReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
 	err := services.Instance().Feed().DeletePost(in.GetUuid())
 	if err != nil {
 		return nil, err
@@ -59,6 +65,8 @@ func (s *FeedBuilderServiceServer) DeletePost(ctx context.Context, in *feed.Dele
 }
 
 func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.CreateCommentRequest) (*feed.CreateCommentReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
 	user, err := s.getAndCacheUser(in.AuthorUuid)
 	if err != nil {
 		return nil, err
@@ -75,6 +83,8 @@ func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.C
 }
 
 func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.UpdateCommentRequest) (*feed.UpdateCommentReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
 	user, err := s.getAndCacheUser(in.AuthorUuid)
 	if err != nil {
 		return nil, err
@@ -91,6 +101,8 @@ func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.U
 }
 
 func (s *FeedBuilderServiceServer) DeleteComment(ctx context.Context, in *feed.DeleteCommentRequest) (*feed.DeleteCommentReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
 	err := services.Instance().Feed().DeleteComment(in.GetPostUuid(), in.GetUuid())
 	if err != nil {
 		return nil, err
@@ -99,6 +111,8 @@ func (s *FeedBuilderServiceServer) DeleteComment(ctx context.Context, in *feed.D
 }
 
 func (s *FeedBuilderServiceServer) UpdateUser(ctx context.Context, in *feed.UpdateUserRequest) (*feed.UpdateUserReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
 	user := &profiles.GetUserResult{
 		Uuid:  in.GetUuid(),
 		Login: in.GetLogin(),
