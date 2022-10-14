@@ -263,6 +263,9 @@ func (s *FeedService) GetPost(postUuid string) (*FullPostInfo, error) {
 
 		return &FullPostInfo{Post: resultPost, Comments: resultComments, CommentsMap: resultCommentsMap}, err
 	})()
+	if err != nil {
+		return nil, err
+	}
 	result, ok := data.(*FullPostInfo)
 	if !ok {
 		return nil, fmt.Errorf("unable cast to FullPostInfo")

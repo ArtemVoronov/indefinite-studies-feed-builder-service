@@ -58,11 +58,15 @@ func GetPost(c *gin.Context) {
 		return
 	}
 
-	// TODO: process NOT_FOUND case
 	result, err := services.Instance().Feed().GetPost(postUuid)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, "Unable to get post")
-		log.Error("Unable to get post", err.Error())
+		if err == feed.ErrorRedisNotFound {
+			c.JSON(http.StatusNotFound, api.PAGE_NOT_FOUND)
+			log.Error("Unable to get post "+postUuid, err.Error())
+		} else {
+			c.JSON(http.StatusInternalServerError, "Unable to get post")
+			log.Error("Unable to get post", err.Error())
+		}
 		return
 	}
 
