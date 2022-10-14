@@ -82,7 +82,7 @@ func Sync(c *gin.Context) {
 }
 
 func Clear(c *gin.Context) {
-	err := services.Instance().Feed().ClearFeed()
+	err := services.Instance().Feed().Clear()
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to clear feed")

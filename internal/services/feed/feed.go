@@ -18,13 +18,13 @@ import (
 
 /*
 Basic implementation of feed:
-HASHMAP1 (REDIS_POSTS_KEY): post_id -> {full json post info}
-SORTEDSET1 (REDIS_FEED_KEY): [(create_date, post_id) ... (create_date, post_id)]
+HASHMAP1 (REDIS_POSTS_KEY): post_uuid -> {full json post info}
+SORTEDSET1 (REDIS_FEED_KEY): [(create_date, post_uuid) ... (create_date, post_uuid)]
 
-HASHMAP2 (REDIS_COMMENTS_KEY): (comment_id) -> {full json comment info}
-SORTEDSET2 (post_id_comments): [(create_date, comment_id) ... (create_date, comment_id)]
+HASHMAP2 (REDIS_COMMENTS_KEY): (comment_uuid) -> {full json comment info}
+SORTEDSET2 (post_uuid_comments): [(create_date, comment_uuid) ... (create_date, comment_uuid)]
 
-HASHMAP3 (REDIS_USERS_KEY): (user_id) -> {full json user info}
+HASHMAP3 (REDIS_USERS_KEY): (user_uuid) -> {full json user info}
 
 Use-cases:
 1. create post -> add to HASHMAP1 and SORTEDSET1
@@ -36,17 +36,17 @@ Use-cases:
 
 7. get feed ->
 	- get pairs from REDIS_FEED_POSTS_KEY (e.g. first ten, it is sorted by create date in desc order)
-	- get post by post_id for each pair from HASHMAP1
+	- get post by post_uuid for each pair from HASHMAP1
 	- get post comments count for each part from SORTEDSET2
 	- return feed object (as array of posts with comments counter)
 8. get post ->
-	- get post by id from HASHMAP1
+	- get post by uuid from HASHMAP1
 	- get all comments by id from SORTEDSET2
 9. sync feed:
-	- clear all collections (post_id_comments...), REDIS_POSTS_KEY, REDIS_FEED_KEY, REDIS_COMMENTS_KEY
+	- clear all collections (post_uuid_comments...), REDIS_POSTS_KEY, REDIS_FEED_KEY, REDIS_COMMENTS_KEY
 	- load all posts and comments from posts service via gGRPC
 
-10. update user -> update key in HASHMAP3 and iterate through all posts and comments, if AuthroId == user.id, then update the post and its comments
+10. update user -> update key in HASHMAP3 and iterate through all posts and comments, if AuthroUuid == user.uuid, then update the post and its comments
 */
 
 const (
@@ -360,7 +360,7 @@ func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) e
 func (s *FeedService) Sync() error {
 	// TODO: check concurrent create/update/delete events during syncing
 	// TODO: add appropriate locks or op time comparings
-	err := s.ClearFeed()
+	err := s.clear()
 	if err != nil {
 		return err
 	}
@@ -369,6 +369,10 @@ func (s *FeedService) Sync() error {
 		return err
 	}
 	return s.syncPosts()
+}
+
+func (s *FeedService) Clear() error {
+	return s.clear()
 }
 
 func (s *FeedService) syncUsers() error {
@@ -505,7 +509,7 @@ func (s *FeedService) syncComments(postUuid string) error {
 	return nil
 }
 
-func (s *FeedService) ClearFeed() error {
+func (s *FeedService) clear() error {
 	var offset int = 0
 	var limit int = 50
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
@@ -543,6 +547,10 @@ func (s *FeedService) ClearFeed() error {
 
 		if err := cli.Del(ctx, REDIS_POSTS_KEY).Err(); err != nil {
 			return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", REDIS_POSTS_KEY, err)
+		}
+
+		if err := cli.Del(ctx, REDIS_USERS_KEY).Err(); err != nil {
+			return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", REDIS_USERS_KEY, err)
 		}
 
 		return nil
