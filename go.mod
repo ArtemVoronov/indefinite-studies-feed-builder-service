@@ -3,7 +3,7 @@ module github.com/ArtemVoronov/indefinite-studies-feed-builder-service
 go 1.18
 
 require (
-	github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20221013112304-8b014720165a
+	github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20221016124711-fb49b7fc7bac
 	github.com/gin-contrib/expvar v0.0.1
 	github.com/gin-gonic/gin v1.8.1
 	github.com/go-redis/redis/v8 v8.11.5

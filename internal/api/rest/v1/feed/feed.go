@@ -21,6 +21,7 @@ type FeedDTO struct {
 func GetFeed(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "10")
 	offsetStr := c.DefaultQuery("offset", "0")
+	tagId := c.DefaultQuery("tagId", "")
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
@@ -32,7 +33,12 @@ func GetFeed(c *gin.Context) {
 		offset = 0
 	}
 
-	feedBlocks, err := services.Instance().Feed().GetFeed(offset, limit)
+	var feedBlocks []feed.FeedBlock
+	if tagId != "" {
+		feedBlocks, err = services.Instance().Feed().GetFeedByTag(tagId, offset, limit)
+	} else {
+		feedBlocks, err = services.Instance().Feed().GetFeed(offset, limit)
+	}
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to get feed")

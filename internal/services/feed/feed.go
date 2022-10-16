@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -44,10 +45,14 @@ Use-cases:
 	- get post by uuid from HASHMAP1
 	- get all comments by id from SORTEDSET2
 9. sync feed:
-	- clear all collections (post_uuid_comments...), REDIS_POSTS_KEY, REDIS_FEED_KEY, REDIS_COMMENTS_KEY
+	- clear all collections (post_uuid_comments...), REDIS_POSTS_KEY, REDIS_FEED_KEY, REDIS_COMMENTS_KEY, REDIS_USERS_KEY
 	- load all posts and comments from posts service via gGRPC
 
 10. update user -> update key in HASHMAP3 and iterate through all posts and comments, if AuthroUuid == user.uuid, then update the post and its comments
+
+11. get feed by tag ->
+	- get pair from sorted set "feed_by_tag_ + tag_id"
+	- the same actions as at "get feed" use-case
 */
 
 const (
@@ -55,6 +60,7 @@ const (
 	REDIS_FEED_KEY     = "feed"
 	REDIS_COMMENTS_KEY = "comments"
 	REDIS_USERS_KEY    = "users"
+	REDIS_TAGS_KEY     = "tags"
 )
 
 var (
@@ -69,7 +75,7 @@ type FeedBlock struct {
 	AuthorName      string
 	CreateDate      time.Time
 	CommentsCount   int64
-	Tags            []string
+	Tags            []entities.FeedTag
 }
 
 type FullPostInfo struct {
@@ -133,6 +139,12 @@ func (s *FeedService) CreatePost(post *entities.FeedPost) error {
 			Score:  float64(post.CreateDate.Unix() * -1),
 			Member: post.PostUuid,
 		}).Err()
+		for _, tag := range post.Tags {
+			err = cli.ZAdd(ctx, FeedByTagKeyInt(tag.Id), &redis.Z{
+				Score:  float64(post.CreateDate.Unix() * -1),
+				Member: post.PostUuid,
+			}).Err()
+		}
 		return err
 	})()
 }
@@ -250,6 +262,38 @@ func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 	return result, err
 }
 
+func (s *FeedService) GetFeedByTag(tagId string, offset int, limit int) ([]FeedBlock, error) {
+	s.SyncGuard.RLock()
+	defer s.SyncGuard.RUnlock()
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+		postUuids, err := getPostUuidsByTag(tagId, offset, limit, cli, ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]FeedBlock, 0, limit)
+		for _, postUuid := range postUuids {
+			post, err := getPost(PostKey(postUuid), cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			commentsCount, err := getCommentsCount(PostCommentsKey(postUuid), cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			feedBlock := toFeedBlock(&post, commentsCount)
+			result = append(result, feedBlock)
+		}
+
+		return result, err
+	})()
+
+	result, ok := data.([]FeedBlock)
+	if !ok {
+		return nil, fmt.Errorf("unable cast to []FeedBlock")
+	}
+	return result, err
+}
+
 func (s *FeedService) GetPost(postUuid string) (*FullPostInfo, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
@@ -290,6 +334,17 @@ func (s *FeedService) UpsertUser(user *profiles.GetUserResult) error {
 	})()
 }
 
+func (s *FeedService) UpsertTag(tag *entities.FeedTag) error {
+	tagKey := TagKeyInt(tag.Id)
+	TagVal, err := ToJsonString(tag)
+	if err != nil {
+		return err
+	}
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+		return cli.HSet(ctx, REDIS_TAGS_KEY, tagKey, TagVal).Err()
+	})()
+}
+
 func (s *FeedService) GetUser(userUuid string) (*profiles.GetUserResult, error) {
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		return getUser(UserKey(userUuid), cli, ctx)
@@ -304,6 +359,19 @@ func (s *FeedService) GetUser(userUuid string) (*profiles.GetUserResult, error) 
 	return &result, err
 }
 
+func (s *FeedService) GetTag(tagId int) (*entities.FeedTag, error) {
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+		return getTag(TagKeyInt(tagId), cli, ctx)
+	})()
+	if err != nil {
+		return nil, err
+	}
+	result, ok := data.(entities.FeedTag)
+	if !ok {
+		return nil, fmt.Errorf("unable cast to entities.FeedTag")
+	}
+	return &result, err
+}
 func (s *FeedService) SyncUserDataInFeed(user *profiles.GetUserResult) error {
 	return s.syncUserDataInPosts(user)
 }
@@ -366,10 +434,64 @@ func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) e
 	return nil
 }
 
+func (s *FeedService) SyncTagDataInFeed(updatedTag *entities.FeedTag) error {
+	return s.syncTagDataInFeed(updatedTag)
+}
+
+func (s *FeedService) syncTagDataInFeed(updatedTag *entities.FeedTag) error {
+	var offset int = 0
+	var limit int = 50
+
+	for {
+		data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+			postUuids, err := getPostUuidsByTag(strconv.Itoa(updatedTag.Id), offset, limit, cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, postUuid := range postUuids {
+				post, err := getPost(PostKey(postUuid), cli, ctx)
+				if err != nil {
+					return nil, err
+				}
+				for i, tag := range post.Tags {
+					if tag.Id == updatedTag.Id {
+						post.Tags[i].Name = updatedTag.Name
+					}
+				}
+				s.UpdatePost(&post)
+			}
+
+			return postUuids, err
+		})()
+		if err != nil {
+			return fmt.Errorf("unable to SyncUserDataInFeed: %v", err)
+		}
+		postUuids, ok := data.([]string)
+		if !ok {
+			return fmt.Errorf("unable to SyncUserDataInFeed: %v", "unable to cast to data to []string (as post ids)")
+		}
+		if len(postUuids) <= 0 {
+			return nil
+		}
+
+		if len(postUuids) < limit {
+			break
+		}
+
+		offset += limit
+	}
+
+	return nil
+}
+
 func (s *FeedService) Sync() error {
 	s.SyncGuard.Lock()
 	defer s.SyncGuard.Unlock()
 	err := s.syncUsers()
+	if err != nil {
+		return err
+	}
+	err = s.syncTags()
 	if err != nil {
 		return err
 	}
@@ -426,6 +548,36 @@ func (s *FeedService) syncUsers() error {
 	return nil
 }
 
+func (s *FeedService) syncTags() error {
+	var offset int32 = 0
+	var limit int32 = 50
+	for {
+		reply, err := s.postsService.GetTags(offset, limit)
+		if err != nil {
+			return fmt.Errorf("unable to syncTags: %v", err)
+		}
+		tags := posts.ToGetTagResultSlice(reply.GetTags())
+
+		if len(tags) <= 0 {
+			break
+		}
+
+		for _, tag := range tags {
+			err := s.UpsertTag(&entities.FeedTag{Id: tag.Id, Name: tag.Name})
+			if err != nil {
+				return fmt.Errorf("unable to syncTags: %v", err)
+			}
+		}
+
+		if len(tags) < int(limit) {
+			break
+		}
+
+		offset += limit
+	}
+	return nil
+}
+
 func (s *FeedService) syncPosts() error {
 	var shardCount int32 = -1
 	var shard int32 = 0
@@ -451,11 +603,14 @@ func (s *FeedService) syncPosts() error {
 				if err != nil {
 					return fmt.Errorf("unable to syncPosts due to problem of getting user from cache: %v", err)
 				}
-				feedPost, convertErr := ToFeedPost(post, user.Login)
+				tags, err := s.GetAndCacheTags(post.TagIds)
+				if err != nil {
+					return fmt.Errorf("unable to syncPosts due to problem of getting user tags cache: %v", err)
+				}
+				feedPost, convertErr := s.ToFeedPost(post, user.Login, tags)
 				if convertErr != nil {
 					return fmt.Errorf("unable to syncPosts: %v", convertErr)
 				}
-
 				createFeedPostErr := s.CreatePost(feedPost)
 				if createFeedPostErr != nil {
 					return fmt.Errorf("unable to syncPosts, unable save to store the feed post with Uuid: %v", feedPost.PostUuid)
@@ -495,7 +650,7 @@ func (s *FeedService) syncComments(postUuid string) error {
 			if err != nil {
 				return fmt.Errorf("unable to syncComments due to problem of getting user from cache: %v", err)
 			}
-			feedComment, convertErr := ToFeedComment(commentReply, user.Login)
+			feedComment, convertErr := s.ToFeedComment(commentReply, user.Login)
 			if convertErr != nil {
 				return fmt.Errorf("unable to syncComments: %v", convertErr)
 			}
@@ -560,6 +715,10 @@ func (s *FeedService) clear() error {
 			return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", REDIS_USERS_KEY, err)
 		}
 
+		if err := cli.Del(ctx, REDIS_TAGS_KEY).Err(); err != nil {
+			return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", REDIS_TAGS_KEY, err)
+		}
+
 		return nil
 	})()
 }
@@ -568,8 +727,24 @@ func UserKey(userUuid string) string {
 	return "user_" + userUuid
 }
 
+func TagKey(tagId string) string {
+	return "tag_" + tagId
+}
+
+func TagKeyInt(tagId int) string {
+	return TagKey(strconv.Itoa(tagId))
+}
+
 func PostKey(postUuid string) string {
 	return "post_" + postUuid
+}
+
+func FeedByTagKey(tagId string) string {
+	return "feed_by_tag_" + tagId
+}
+
+func FeedByTagKeyInt(tagId int) string {
+	return FeedByTagKey(strconv.Itoa(tagId))
 }
 
 func CommentKey(commentUuid string) string {
@@ -586,6 +761,15 @@ func ToJsonString(obj any) (string, error) {
 		return "", err
 	}
 	return string(bytes), nil
+}
+
+func getPostUuidsByTag(tagId string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
+	return cli.ZRangeByScore(ctx, FeedByTagKey(tagId), &redis.ZRangeBy{
+		Min:    "-inf",
+		Max:    "+inf",
+		Offset: int64(offset),
+		Count:  int64(limit),
+	}).Result()
 }
 
 func getPostUuids(offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
@@ -634,6 +818,22 @@ func getUser(userKey string, cli *redis.Client, ctx context.Context) (profiles.G
 		return user, fmt.Errorf("unable to unmarshal feed user: %v. userStr: %v", err, userStr)
 	}
 	return user, nil
+}
+
+func getTag(tagKey string, cli *redis.Client, ctx context.Context) (entities.FeedTag, error) {
+	var tag entities.FeedTag
+	tagStr, err := cli.HGet(ctx, REDIS_TAGS_KEY, tagKey).Result()
+	if tagStr == "" {
+		return tag, ErrorRedisNotFound
+	}
+	if err != nil {
+		return tag, fmt.Errorf("unable to get feed tag: %v", err)
+	}
+	err = json.Unmarshal([]byte(tagStr), &tag)
+	if err != nil {
+		return tag, fmt.Errorf("unable to unmarshal feed tag: %v. tagStr: %v", err, tagStr)
+	}
+	return tag, nil
 }
 
 func getCommentsCount(postCommentsKey string, cli *redis.Client, ctx context.Context) (int64, error) {
@@ -694,7 +894,7 @@ func toCommentKeys(commentUuids []string) []string {
 	return commentKeys
 }
 
-func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
+func (s *FeedService) ToFeedPost(post any, authorName string, tags []entities.FeedTag) (*entities.FeedPost, error) {
 	switch t := post.(type) {
 	case *feed.CreatePostRequest:
 		return &entities.FeedPost{
@@ -707,7 +907,7 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 			PostState:       t.State,
 			CreateDate:      t.CreateDate.AsTime(),
 			LastUpdateDate:  t.LastUpdateDate.AsTime(),
-			Tags:            convertTags(t.Tags),
+			Tags:            tags,
 		}, nil
 	case *feed.UpdatePostRequest:
 		return &entities.FeedPost{
@@ -720,7 +920,7 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 			PostState:       t.State,
 			CreateDate:      t.CreateDate.AsTime(),
 			LastUpdateDate:  t.LastUpdateDate.AsTime(),
-			Tags:            convertTags(t.Tags),
+			Tags:            tags,
 		}, nil
 	case posts.GetPostResult:
 		return &entities.FeedPost{
@@ -733,14 +933,14 @@ func ToFeedPost(post any, authorName string) (*entities.FeedPost, error) {
 			PostState:       t.State,
 			CreateDate:      t.CreateDate,
 			LastUpdateDate:  t.LastUpdateDate,
-			Tags:            convertTags(t.Tags),
+			Tags:            tags,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown type of post: %T", post)
 	}
 }
 
-func ToFeedComment(comment any, authorName string) (*entities.FeedComment, error) {
+func (s *FeedService) ToFeedComment(comment any, authorName string) (*entities.FeedComment, error) {
 	switch t := comment.(type) {
 	case *feed.CreateCommentRequest:
 		return &entities.FeedComment{
@@ -786,9 +986,62 @@ func ToFeedComment(comment any, authorName string) (*entities.FeedComment, error
 	}
 }
 
-func convertTags(in []string) []string {
-	if len(in) == 0 {
-		return []string{}
+func ToFeedTag(tag any) (*entities.FeedTag, error) {
+	switch t := tag.(type) {
+	case *feed.CreateTagRequest:
+		return &entities.FeedTag{
+			Id:   int(t.GetId()),
+			Name: t.GetName(),
+		}, nil
+	case *feed.UpdateTagRequest:
+		return &entities.FeedTag{
+			Id:   int(t.GetId()),
+			Name: t.GetName(),
+		}, nil
+	case posts.GetTagResult:
+		return &entities.FeedTag{
+			Id:   t.Id,
+			Name: t.Name,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown type of tag: %T", tag)
 	}
-	return in
+}
+
+func (s *FeedService) GetAndCacheTags(tagIds []int) ([]entities.FeedTag, error) {
+	result := make([]entities.FeedTag, 0, len(tagIds))
+	if len(tagIds) == 0 {
+		return []entities.FeedTag{}, nil
+	}
+	for _, tagId := range tagIds {
+		tag, err := s.GetAndCacheTag(tagId)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *tag)
+	}
+	return result, nil
+}
+
+func (s *FeedService) GetAndCacheTag(tagId int) (*entities.FeedTag, error) {
+	tag, err := s.GetTag(tagId)
+	if err != nil && err == ErrorRedisNotFound {
+		getTagResult, errRes := s.postsService.GetTag(int32(tagId))
+		if errRes != nil {
+			return nil, errRes
+		}
+		tag, errRes = ToFeedTag(getTagResult)
+		if errRes != nil {
+			return nil, errRes
+		}
+		err = nil
+	}
+	if err != nil || tag == nil {
+		return nil, err
+	}
+	err = s.UpsertTag(tag)
+	if err != nil {
+		return nil, err
+	}
+	return tag, nil
 }

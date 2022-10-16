@@ -7,6 +7,7 @@ import (
 	feedService "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 	"google.golang.org/grpc"
 )
 
@@ -25,7 +26,11 @@ func (s *FeedBuilderServiceServer) CreatePost(ctx context.Context, in *feed.Crea
 	if err != nil {
 		return nil, err
 	}
-	post, err := feedService.ToFeedPost(in, user.Login)
+	tags, err := services.Instance().Feed().GetAndCacheTags(utils.ToInt(in.GetTagIds()))
+	if err != nil {
+		return nil, err
+	}
+	post, err := services.Instance().Feed().ToFeedPost(in, user.Login, tags)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +48,11 @@ func (s *FeedBuilderServiceServer) UpdatePost(ctx context.Context, in *feed.Upda
 	if err != nil {
 		return nil, err
 	}
-	post, err := feedService.ToFeedPost(in, user.Login)
+	tags, err := services.Instance().Feed().GetAndCacheTags(utils.ToInt(in.GetTagIds()))
+	if err != nil {
+		return nil, err
+	}
+	post, err := services.Instance().Feed().ToFeedPost(in, user.Login, tags)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +80,7 @@ func (s *FeedBuilderServiceServer) CreateComment(ctx context.Context, in *feed.C
 	if err != nil {
 		return nil, err
 	}
-	comment, err := feedService.ToFeedComment(in, user.Login)
+	comment, err := services.Instance().Feed().ToFeedComment(in, user.Login)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +98,7 @@ func (s *FeedBuilderServiceServer) UpdateComment(ctx context.Context, in *feed.U
 	if err != nil {
 		return nil, err
 	}
-	comment, err := feedService.ToFeedComment(in, user.Login)
+	comment, err := services.Instance().Feed().ToFeedComment(in, user.Login)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +138,41 @@ func (s *FeedBuilderServiceServer) UpdateUser(ctx context.Context, in *feed.Upda
 		return nil, err
 	}
 	return &feed.UpdateUserReply{}, nil
+}
+
+func (s *FeedBuilderServiceServer) CreateTag(ctx context.Context, in *feed.CreateTagRequest) (*feed.CreateTagReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
+
+	tag, err := feedService.ToFeedTag(in)
+	if err != nil {
+		return nil, err
+	}
+
+	err = services.Instance().Feed().UpsertTag(tag)
+	if err != nil {
+		return nil, err
+	}
+	return &feed.CreateTagReply{}, nil
+}
+
+func (s *FeedBuilderServiceServer) UpdateTag(ctx context.Context, in *feed.UpdateTagRequest) (*feed.UpdateTagReply, error) {
+	services.Instance().Feed().SyncGuard.RLock()
+	defer services.Instance().Feed().SyncGuard.RUnlock()
+
+	tag, err := feedService.ToFeedTag(in)
+	if err != nil {
+		return nil, err
+	}
+	err = services.Instance().Feed().UpsertTag(tag)
+	if err != nil {
+		return nil, err
+	}
+	err = services.Instance().Feed().SyncTagDataInFeed(tag)
+	if err != nil {
+		return nil, err
+	}
+	return &feed.UpdateTagReply{}, nil
 }
 
 func (s *FeedBuilderServiceServer) getAndCacheUser(authorUuid string) (*profiles.GetUserResult, error) {

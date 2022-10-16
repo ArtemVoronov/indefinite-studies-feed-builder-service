@@ -12,7 +12,12 @@ type FeedPost struct {
 	AuthorName      string
 	CreateDate      time.Time
 	LastUpdateDate  time.Time
-	Tags            []string
+	Tags            []FeedTag
+}
+
+type FeedTag struct {
+	Id   int
+	Name string
 }
 
 type FeedComment struct {
