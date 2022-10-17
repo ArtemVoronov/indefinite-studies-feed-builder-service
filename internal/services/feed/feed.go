@@ -167,10 +167,23 @@ func (s *FeedService) UpdatePost(post *entities.FeedPost) error {
 func (s *FeedService) DeletePost(postUuid string) error {
 	postKey := PostKey(postUuid)
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
-		err := cli.ZRem(ctx, REDIS_FEED_KEY, postUuid).Err()
+		post, err := getPost(PostKey(postUuid), cli, ctx)
 		if err != nil {
 			return err
 		}
+
+		err = cli.ZRem(ctx, REDIS_FEED_KEY, postUuid).Err()
+		if err != nil {
+			return err
+		}
+
+		for _, tag := range post.Tags {
+			err = cli.ZRem(ctx, FeedByTagKeyInt(tag.Id), postUuid).Err()
+			if err != nil {
+				return err
+			}
+		}
+
 		err = cli.HDel(ctx, REDIS_POSTS_KEY, postKey).Err()
 		if err != nil {
 			return err
