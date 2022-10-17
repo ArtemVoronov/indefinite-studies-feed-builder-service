@@ -53,10 +53,14 @@ Use-cases:
 11. get feed by tag ->
 	- get pair from sorted set "feed_by_tag_ + tag_id"
 	- the same actions as at "get feed" use-case
+
+12. get feed by state ->
+	- get pair from sorted set "feed_by_state_ + state" ("NEW", "ON_MODERATION", "PUBLISHED", "BLOCKED" ,"DELETED" etc)
+	- the same actions as at "get feed" use-case
 */
 
 const (
-	REDIS_POSTS_KEY    = "posts"
+	REDIS_POSTS_KEY    = "posts" // TODO: this common feed could be deleted after staging feeds by post states
 	REDIS_FEED_KEY     = "feed"
 	REDIS_COMMENTS_KEY = "comments"
 	REDIS_USERS_KEY    = "users"
@@ -139,6 +143,16 @@ func (s *FeedService) CreatePost(post *entities.FeedPost) error {
 			Score:  float64(post.CreateDate.Unix() * -1),
 			Member: post.PostUuid,
 		}).Err()
+		if err != nil {
+			return err
+		}
+		err = cli.ZAdd(ctx, FeedByStateKey(post.PostState), &redis.Z{
+			Score:  float64(post.CreateDate.Unix() * -1),
+			Member: post.PostUuid,
+		}).Err()
+		if err != nil {
+			return err
+		}
 		for _, tag := range post.Tags {
 			err = cli.ZAdd(ctx, FeedByTagKeyInt(tag.Id), &redis.Z{
 				Score:  float64(post.CreateDate.Unix() * -1),
@@ -149,46 +163,44 @@ func (s *FeedService) CreatePost(post *entities.FeedPost) error {
 	})()
 }
 
-func (s *FeedService) UpdatePost(post *entities.FeedPost) error {
-	postKey := PostKey(post.PostUuid)
-	postVal, err := ToJsonString(post)
+func (s *FeedService) UpdatePost(newPost *entities.FeedPost) error {
+	postKey := PostKey(newPost.PostUuid)
+	postVal, err := ToJsonString(newPost)
 	if err != nil {
 		return err
 	}
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
-		err := cli.HSet(ctx, REDIS_POSTS_KEY, postKey, postVal).Err()
-		if err != nil {
-			return err
-		}
-		return err
-	})()
-}
-
-func (s *FeedService) DeletePost(postUuid string) error {
-	postKey := PostKey(postUuid)
-	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
-		post, err := getPost(PostKey(postUuid), cli, ctx)
+		oldPost, err := getPost(postKey, cli, ctx)
 		if err != nil {
 			return err
 		}
 
-		err = cli.ZRem(ctx, REDIS_FEED_KEY, postUuid).Err()
+		err = cli.HSet(ctx, REDIS_POSTS_KEY, postKey, postVal).Err()
 		if err != nil {
 			return err
 		}
 
-		for _, tag := range post.Tags {
-			err = cli.ZRem(ctx, FeedByTagKeyInt(tag.Id), postUuid).Err()
+		if oldPost.PostState != newPost.PostState {
+			err = cli.ZAdd(ctx, FeedByStateKey(newPost.PostState), &redis.Z{
+				Score:  float64(newPost.CreateDate.Unix() * -1),
+				Member: newPost.PostUuid,
+			}).Err()
+			if err != nil {
+				return err
+			}
+			err = cli.ZRem(ctx, FeedByStateKey(oldPost.PostState), oldPost.PostUuid).Err()
 			if err != nil {
 				return err
 			}
 		}
 
-		err = cli.HDel(ctx, REDIS_POSTS_KEY, postKey).Err()
-		if err != nil {
-			return err
-		}
 		return err
+	})()
+}
+
+func (s *FeedService) DeletePost(postUuid string) error {
+	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
+		return deletePost(postUuid, cli, ctx)
 	})()
 }
 
@@ -280,6 +292,38 @@ func (s *FeedService) GetFeedByTag(tagId string, offset int, limit int) ([]FeedB
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		postUuids, err := getPostUuidsByTag(tagId, offset, limit, cli, ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]FeedBlock, 0, limit)
+		for _, postUuid := range postUuids {
+			post, err := getPost(PostKey(postUuid), cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			commentsCount, err := getCommentsCount(PostCommentsKey(postUuid), cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			feedBlock := toFeedBlock(&post, commentsCount)
+			result = append(result, feedBlock)
+		}
+
+		return result, err
+	})()
+
+	result, ok := data.([]FeedBlock)
+	if !ok {
+		return nil, fmt.Errorf("unable cast to []FeedBlock")
+	}
+	return result, err
+}
+
+func (s *FeedService) GetFeedByState(state string, offset int, limit int) ([]FeedBlock, error) {
+	s.SyncGuard.RLock()
+	defer s.SyncGuard.RUnlock()
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+		postUuids, err := getPostUuidsByState(state, offset, limit, cli, ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -699,6 +743,7 @@ func (s *FeedService) clear() error {
 			}
 
 			for _, postUuid := range postUuids {
+				deletePost(postUuid, cli, ctx)
 				postCommentsKey := PostCommentsKey(postUuid)
 				if err := cli.Del(ctx, postCommentsKey).Err(); err != nil {
 					return fmt.Errorf("unable to clear feed, error during deleting '%v': %v", postCommentsKey, err)
@@ -760,6 +805,10 @@ func FeedByTagKeyInt(tagId int) string {
 	return FeedByTagKey(strconv.Itoa(tagId))
 }
 
+func FeedByStateKey(state string) string {
+	return "feed_by_state_" + state
+}
+
 func CommentKey(commentUuid string) string {
 	return "comment_" + commentUuid
 }
@@ -778,6 +827,15 @@ func ToJsonString(obj any) (string, error) {
 
 func getPostUuidsByTag(tagId string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
 	return cli.ZRangeByScore(ctx, FeedByTagKey(tagId), &redis.ZRangeBy{
+		Min:    "-inf",
+		Max:    "+inf",
+		Offset: int64(offset),
+		Count:  int64(limit),
+	}).Result()
+}
+
+func getPostUuidsByState(state string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
+	return cli.ZRangeByScore(ctx, FeedByStateKey(state), &redis.ZRangeBy{
 		Min:    "-inf",
 		Max:    "+inf",
 		Offset: int64(offset),
@@ -884,6 +942,37 @@ func getComments(commentKeys []string, cli *redis.Client, ctx context.Context) (
 		resultCommentsMap[comment.CommentUuid] = FeedCommentWithIndex{Index: commentIndex, FeedComment: comment}
 	}
 	return resultComments, resultCommentsMap, nil
+}
+
+func deletePost(postUuid string, cli *redis.Client, ctx context.Context) error {
+	postKey := PostKey(postUuid)
+	post, err := getPost(postKey, cli, ctx)
+	if err != nil {
+		return err
+	}
+
+	err = cli.ZRem(ctx, REDIS_FEED_KEY, postUuid).Err()
+	if err != nil {
+		return err
+	}
+
+	err = cli.ZRem(ctx, FeedByStateKey(post.PostState), post.PostUuid).Err()
+	if err != nil {
+		return err
+	}
+
+	for _, tag := range post.Tags {
+		err = cli.ZRem(ctx, FeedByTagKeyInt(tag.Id), postUuid).Err()
+		if err != nil {
+			return err
+		}
+	}
+
+	err = cli.HDel(ctx, REDIS_POSTS_KEY, postKey).Err()
+	if err != nil {
+		return err
+	}
+	return err
 }
 
 func toFeedBlock(post *entities.FeedPost, commentsCount int64) FeedBlock {

@@ -8,6 +8,7 @@ import (
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/api"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db/entities"
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,6 +23,7 @@ func GetFeed(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "10")
 	offsetStr := c.DefaultQuery("offset", "0")
 	tagId := c.DefaultQuery("tagId", "")
+	state := c.DefaultQuery("state", "")
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
@@ -37,7 +39,10 @@ func GetFeed(c *gin.Context) {
 	if tagId != "" {
 		feedBlocks, err = services.Instance().Feed().GetFeedByTag(tagId, offset, limit)
 	} else {
-		feedBlocks, err = services.Instance().Feed().GetFeed(offset, limit)
+		if state == "" {
+			state = entities.POST_STATE_PUBLISHED
+		}
+		feedBlocks, err = services.Instance().Feed().GetFeedByState(state, offset, limit)
 	}
 
 	if err != nil {
