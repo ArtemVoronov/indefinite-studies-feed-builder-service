@@ -11,6 +11,7 @@ import (
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
+	utilsEntities "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db/entities"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/posts"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
@@ -154,7 +155,7 @@ func (s *FeedService) CreatePost(post *entities.FeedPost) error {
 			return err
 		}
 		for _, tag := range post.Tags {
-			err = cli.ZAdd(ctx, FeedByTagKeyInt(tag.Id), &redis.Z{
+			err = cli.ZAdd(ctx, FeedByTagIntAndStateKey(tag.Id, post.PostState), &redis.Z{
 				Score:  float64(post.CreateDate.Unix() * -1),
 				Member: post.PostUuid,
 			}).Err()
@@ -191,6 +192,20 @@ func (s *FeedService) UpdatePost(newPost *entities.FeedPost) error {
 			err = cli.ZRem(ctx, FeedByStateKey(oldPost.PostState), oldPost.PostUuid).Err()
 			if err != nil {
 				return err
+			}
+
+			for _, tag := range oldPost.Tags {
+				err = cli.ZRem(ctx, FeedByTagIntAndStateKey(tag.Id, oldPost.PostState), oldPost.PostUuid).Err()
+				if err != nil {
+					return err
+				}
+			}
+
+			for _, tag := range newPost.Tags {
+				err = cli.ZAdd(ctx, FeedByTagIntAndStateKey(tag.Id, newPost.PostState), &redis.Z{
+					Score:  float64(newPost.CreateDate.Unix() * -1),
+					Member: newPost.PostUuid,
+				}).Err()
 			}
 		}
 
@@ -287,11 +302,11 @@ func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 	return result, err
 }
 
-func (s *FeedService) GetFeedByTag(tagId string, offset int, limit int) ([]FeedBlock, error) {
+func (s *FeedService) GetFeedByTagAndState(tagId string, state string, offset int, limit int) ([]FeedBlock, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
-		postUuids, err := getPostUuidsByTag(tagId, offset, limit, cli, ctx)
+		postUuids, err := getPostUuidsByTagAndState(tagId, state, offset, limit, cli, ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -498,44 +513,46 @@ func (s *FeedService) SyncTagDataInFeed(updatedTag *entities.FeedTag) error {
 func (s *FeedService) syncTagDataInFeed(updatedTag *entities.FeedTag) error {
 	var offset int = 0
 	var limit int = 50
-
-	for {
-		data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
-			postUuids, err := getPostUuidsByTag(strconv.Itoa(updatedTag.Id), offset, limit, cli, ctx)
-			if err != nil {
-				return nil, err
-			}
-			for _, postUuid := range postUuids {
-				post, err := getPost(PostKey(postUuid), cli, ctx)
+	states := utilsEntities.GetPossiblePostStates()
+	for _, state := range states {
+		for {
+			data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+				postUuids, err := getPostUuidsByTagAndState(strconv.Itoa(updatedTag.Id), state, offset, limit, cli, ctx)
 				if err != nil {
 					return nil, err
 				}
-				for i, tag := range post.Tags {
-					if tag.Id == updatedTag.Id {
-						post.Tags[i].Name = updatedTag.Name
+				for _, postUuid := range postUuids {
+					post, err := getPost(PostKey(postUuid), cli, ctx)
+					if err != nil {
+						return nil, err
 					}
+					for i, tag := range post.Tags {
+						if tag.Id == updatedTag.Id {
+							post.Tags[i].Name = updatedTag.Name
+						}
+					}
+					s.UpdatePost(&post)
 				}
-				s.UpdatePost(&post)
+
+				return postUuids, err
+			})()
+			if err != nil {
+				return fmt.Errorf("unable to SyncUserDataInFeed: %v", err)
+			}
+			postUuids, ok := data.([]string)
+			if !ok {
+				return fmt.Errorf("unable to SyncUserDataInFeed: %v", "unable to cast to data to []string (as post ids)")
+			}
+			if len(postUuids) <= 0 {
+				break
 			}
 
-			return postUuids, err
-		})()
-		if err != nil {
-			return fmt.Errorf("unable to SyncUserDataInFeed: %v", err)
-		}
-		postUuids, ok := data.([]string)
-		if !ok {
-			return fmt.Errorf("unable to SyncUserDataInFeed: %v", "unable to cast to data to []string (as post ids)")
-		}
-		if len(postUuids) <= 0 {
-			return nil
-		}
+			if len(postUuids) < limit {
+				break
+			}
 
-		if len(postUuids) < limit {
-			break
+			offset += limit
 		}
-
-		offset += limit
 	}
 
 	return nil
@@ -797,12 +814,12 @@ func PostKey(postUuid string) string {
 	return "post_" + postUuid
 }
 
-func FeedByTagKey(tagId string) string {
-	return "feed_by_tag_" + tagId
+func FeedByTagAndStateKey(tagId string, state string) string {
+	return "feed_by_tag_" + tagId + "_and_state_" + state
 }
 
-func FeedByTagKeyInt(tagId int) string {
-	return FeedByTagKey(strconv.Itoa(tagId))
+func FeedByTagIntAndStateKey(tagId int, state string) string {
+	return FeedByTagAndStateKey(strconv.Itoa(tagId), state)
 }
 
 func FeedByStateKey(state string) string {
@@ -825,8 +842,8 @@ func ToJsonString(obj any) (string, error) {
 	return string(bytes), nil
 }
 
-func getPostUuidsByTag(tagId string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
-	return cli.ZRangeByScore(ctx, FeedByTagKey(tagId), &redis.ZRangeBy{
+func getPostUuidsByTagAndState(tagId string, state string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
+	return cli.ZRangeByScore(ctx, FeedByTagAndStateKey(tagId, state), &redis.ZRangeBy{
 		Min:    "-inf",
 		Max:    "+inf",
 		Offset: int64(offset),
@@ -962,7 +979,7 @@ func deletePost(postUuid string, cli *redis.Client, ctx context.Context) error {
 	}
 
 	for _, tag := range post.Tags {
-		err = cli.ZRem(ctx, FeedByTagKeyInt(tag.Id), postUuid).Err()
+		err = cli.ZRem(ctx, FeedByTagIntAndStateKey(tag.Id, post.PostState), postUuid).Err()
 		if err != nil {
 			return err
 		}

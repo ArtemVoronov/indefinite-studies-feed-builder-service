@@ -35,13 +35,14 @@ func GetFeed(c *gin.Context) {
 		offset = 0
 	}
 
+	if state == "" {
+		state = entities.POST_STATE_PUBLISHED
+	}
+
 	var feedBlocks []feed.FeedBlock
 	if tagId != "" {
-		feedBlocks, err = services.Instance().Feed().GetFeedByTag(tagId, offset, limit)
+		feedBlocks, err = services.Instance().Feed().GetFeedByTagAndState(tagId, state, offset, limit)
 	} else {
-		if state == "" {
-			state = entities.POST_STATE_PUBLISHED
-		}
 		feedBlocks, err = services.Instance().Feed().GetFeedByState(state, offset, limit)
 	}
 
