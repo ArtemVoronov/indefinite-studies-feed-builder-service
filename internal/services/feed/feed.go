@@ -61,11 +61,12 @@ Use-cases:
 */
 
 const (
-	REDIS_POSTS_KEY    = "posts" // TODO: this common feed could be deleted after staging feeds by post states
-	REDIS_FEED_KEY     = "feed"
-	REDIS_COMMENTS_KEY = "comments"
-	REDIS_USERS_KEY    = "users"
-	REDIS_TAGS_KEY     = "tags"
+	REDIS_POSTS_KEY     = "posts" // TODO: this common feed could be deleted after staging feeds by post states
+	REDIS_FEED_KEY      = "feed"
+	REDIS_COMMENTS_KEY  = "comments"
+	REDIS_USERS_KEY     = "users"
+	REDIS_TAGS_KEY      = "tags"
+	REDIS_USERS_SET_KEY = "users_set"
 )
 
 var (
@@ -366,6 +367,33 @@ func (s *FeedService) GetFeedByState(state string, offset int, limit int) ([]Fee
 	return result, err
 }
 
+func (s *FeedService) GetUsers(offset int, limit int) ([]profiles.GetUserResult, error) {
+	s.SyncGuard.RLock()
+	defer s.SyncGuard.RUnlock()
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+		userUuids, err := getUsersUuids(offset, limit, cli, ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]profiles.GetUserResult, 0, limit)
+		for _, userUuid := range userUuids {
+			user, err := getUser(UserKey(userUuid), cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, user)
+		}
+
+		return result, err
+	})()
+
+	result, ok := data.([]profiles.GetUserResult)
+	if !ok {
+		return nil, fmt.Errorf("unable cast to []profiles.GetUserResult")
+	}
+	return result, err
+}
+
 func (s *FeedService) GetPost(postUuid string) (*FullPostInfo, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
@@ -402,7 +430,14 @@ func (s *FeedService) UpsertUser(user *profiles.GetUserResult) error {
 		return err
 	}
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
-		return cli.HSet(ctx, REDIS_USERS_KEY, userKey, userVal).Err()
+		err := cli.HSet(ctx, REDIS_USERS_KEY, userKey, userVal).Err()
+		if err != nil {
+			return err
+		}
+		return cli.ZAdd(ctx, REDIS_USERS_SET_KEY, &redis.Z{
+			Score:  float64(user.CreateDate.Unix()),
+			Member: user.Uuid,
+		}).Err()
 	})()
 }
 
@@ -444,6 +479,7 @@ func (s *FeedService) GetTag(tagId int) (*entities.FeedTag, error) {
 	}
 	return &result, err
 }
+
 func (s *FeedService) SyncUserDataInFeed(user *profiles.GetUserResult) error {
 	return s.syncUserDataInPosts(user)
 }
@@ -594,7 +630,6 @@ func (s *FeedService) syncUsers() error {
 				log.Info(fmt.Sprintf("users shard count: %v", shardCount))
 			}
 			users := profiles.ToGetGetUserResultSlice(reply.GetUsers())
-
 			if len(users) <= 0 {
 				break
 			}
@@ -853,6 +888,15 @@ func getPostUuidsByTagAndState(tagId string, state string, offset int, limit int
 
 func getPostUuidsByState(state string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
 	return cli.ZRangeByScore(ctx, FeedByStateKey(state), &redis.ZRangeBy{
+		Min:    "-inf",
+		Max:    "+inf",
+		Offset: int64(offset),
+		Count:  int64(limit),
+	}).Result()
+}
+
+func getUsersUuids(offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
+	return cli.ZRangeByScore(ctx, REDIS_USERS_SET_KEY, &redis.ZRangeBy{
 		Min:    "-inf",
 		Max:    "+inf",
 		Offset: int64(offset),

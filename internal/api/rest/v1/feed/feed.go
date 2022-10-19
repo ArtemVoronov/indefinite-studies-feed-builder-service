@@ -9,6 +9,7 @@ import (
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/api"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db/entities"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,6 +18,13 @@ type FeedDTO struct {
 	Offset int
 	Limit  int
 	Data   []feed.FeedBlock
+}
+
+type UsersListDTO struct {
+	Count  int
+	Offset int
+	Limit  int
+	Data   []profiles.GetUserResult
 }
 
 func GetFeed(c *gin.Context) {
@@ -107,4 +115,35 @@ func Clear(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, api.DONE)
+}
+
+func GetUsers(c *gin.Context) {
+	limitStr := c.DefaultQuery("limit", "10")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 10
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		offset = 0
+	}
+
+	users, err := services.Instance().Feed().GetUsers(offset, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, "Unable to get feed users")
+		log.Error("Unable to get feed users", err.Error())
+		return
+	}
+
+	result := UsersListDTO{
+		Data:   users,
+		Count:  len(users),
+		Offset: offset,
+		Limit:  limit,
+	}
+
+	c.JSON(http.StatusOK, result)
 }
