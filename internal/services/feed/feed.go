@@ -155,6 +155,13 @@ func (s *FeedService) CreatePost(post *entities.FeedPost) error {
 		if err != nil {
 			return err
 		}
+		err = cli.ZAdd(ctx, FeedByUserKey(post.AuthorUuid), &redis.Z{
+			Score:  float64(post.CreateDate.Unix() * -1),
+			Member: post.PostUuid,
+		}).Err()
+		if err != nil {
+			return err
+		}
 		for _, tag := range post.Tags {
 			err = cli.ZAdd(ctx, FeedByTagIntAndStateKey(tag.Id, post.PostState), &redis.Z{
 				Score:  float64(post.CreateDate.Unix() * -1),
@@ -183,6 +190,10 @@ func (s *FeedService) UpdatePost(newPost *entities.FeedPost) error {
 		}
 
 		if oldPost.PostState != newPost.PostState {
+			err = cli.ZRem(ctx, FeedByStateKey(oldPost.PostState), oldPost.PostUuid).Err()
+			if err != nil {
+				return err
+			}
 			err = cli.ZAdd(ctx, FeedByStateKey(newPost.PostState), &redis.Z{
 				Score:  float64(newPost.CreateDate.Unix() * -1),
 				Member: newPost.PostUuid,
@@ -190,7 +201,15 @@ func (s *FeedService) UpdatePost(newPost *entities.FeedPost) error {
 			if err != nil {
 				return err
 			}
-			err = cli.ZRem(ctx, FeedByStateKey(oldPost.PostState), oldPost.PostUuid).Err()
+
+			err = cli.ZRem(ctx, FeedByUserKey(oldPost.AuthorUuid), oldPost.PostUuid).Err()
+			if err != nil {
+				return err
+			}
+			err = cli.ZAdd(ctx, FeedByUserKey(newPost.AuthorUuid), &redis.Z{
+				Score:  float64(newPost.CreateDate.Unix() * -1),
+				Member: newPost.PostUuid,
+			}).Err()
 			if err != nil {
 				return err
 			}
@@ -340,6 +359,38 @@ func (s *FeedService) GetFeedByState(state string, offset int, limit int) ([]Fee
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		postUuids, err := getPostUuidsByState(state, offset, limit, cli, ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]FeedBlock, 0, limit)
+		for _, postUuid := range postUuids {
+			post, err := getPost(PostKey(postUuid), cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			commentsCount, err := getCommentsCount(PostCommentsKey(postUuid), cli, ctx)
+			if err != nil {
+				return nil, err
+			}
+			feedBlock := toFeedBlock(&post, commentsCount)
+			result = append(result, feedBlock)
+		}
+
+		return result, err
+	})()
+
+	result, ok := data.([]FeedBlock)
+	if !ok {
+		return nil, fmt.Errorf("unable cast to []FeedBlock")
+	}
+	return result, err
+}
+
+func (s *FeedService) FeedByUserUuid(userUuid string, offset int, limit int) ([]FeedBlock, error) {
+	s.SyncGuard.RLock()
+	defer s.SyncGuard.RUnlock()
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+		postUuids, err := getPostUuidsByUserUuid(userUuid, offset, limit, cli, ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -861,6 +912,10 @@ func FeedByStateKey(state string) string {
 	return "feed_by_state_" + state
 }
 
+func FeedByUserKey(userUuid string) string {
+	return "feed_by_user_" + userUuid
+}
+
 func CommentKey(commentUuid string) string {
 	return "comment_" + commentUuid
 }
@@ -888,6 +943,15 @@ func getPostUuidsByTagAndState(tagId string, state string, offset int, limit int
 
 func getPostUuidsByState(state string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
 	return cli.ZRangeByScore(ctx, FeedByStateKey(state), &redis.ZRangeBy{
+		Min:    "-inf",
+		Max:    "+inf",
+		Offset: int64(offset),
+		Count:  int64(limit),
+	}).Result()
+}
+
+func getPostUuidsByUserUuid(userUuid string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
+	return cli.ZRangeByScore(ctx, FeedByUserKey(userUuid), &redis.ZRangeBy{
 		Min:    "-inf",
 		Max:    "+inf",
 		Offset: int64(offset),
@@ -1018,6 +1082,11 @@ func deletePost(postUuid string, cli *redis.Client, ctx context.Context) error {
 	}
 
 	err = cli.ZRem(ctx, FeedByStateKey(post.PostState), post.PostUuid).Err()
+	if err != nil {
+		return err
+	}
+
+	err = cli.ZRem(ctx, FeedByUserKey(post.AuthorUuid), post.PostUuid).Err()
 	if err != nil {
 		return err
 	}

@@ -32,6 +32,7 @@ func GetFeed(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	tagId := c.DefaultQuery("tagId", "")
 	state := c.DefaultQuery("state", "")
+	userUuid := c.DefaultQuery("userUuid", "")
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
@@ -48,7 +49,10 @@ func GetFeed(c *gin.Context) {
 	}
 
 	var feedBlocks []feed.FeedBlock
-	if tagId != "" {
+	if userUuid != "" {
+		// TODO: by user and state
+		feedBlocks, err = services.Instance().Feed().FeedByUserUuid(userUuid, offset, limit)
+	} else if tagId != "" {
 		feedBlocks, err = services.Instance().Feed().GetFeedByTagAndState(tagId, state, offset, limit)
 	} else {
 		feedBlocks, err = services.Instance().Feed().GetFeedByState(state, offset, limit)
