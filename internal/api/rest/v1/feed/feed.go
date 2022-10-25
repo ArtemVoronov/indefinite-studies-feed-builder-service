@@ -8,7 +8,7 @@ import (
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/api"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
-	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db/entities"
+	utilsEntities "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db/entities"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
 	"github.com/gin-gonic/gin"
 )
@@ -45,7 +45,7 @@ func GetFeed(c *gin.Context) {
 	}
 
 	if state == "" {
-		state = entities.POST_STATE_PUBLISHED
+		state = utilsEntities.POST_STATE_PUBLISHED
 	}
 
 	var feedBlocks []feed.FeedBlock
