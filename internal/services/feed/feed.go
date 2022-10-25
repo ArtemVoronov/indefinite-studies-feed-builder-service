@@ -242,6 +242,7 @@ func (s *FeedService) DeletePost(postUuid string) error {
 func (s *FeedService) CreateComment(comment *entities.FeedComment) error {
 	postCommentsKey := PostCommentsKey(comment.PostUuid)
 	commentKey := CommentKey(comment.CommentUuid)
+	commentByStateKey := CommentsByStateKey(comment.CommentState)
 	commentVal, err := ToJsonString(comment)
 	if err != nil {
 		return err
@@ -255,20 +256,49 @@ func (s *FeedService) CreateComment(comment *entities.FeedComment) error {
 			Score:  float64(comment.CreateDate.Unix()),
 			Member: comment.CommentUuid,
 		}).Err()
+		if err != nil {
+			return err
+		}
+		err = cli.ZAdd(ctx, commentByStateKey, &redis.Z{
+			Score:  float64(comment.CreateDate.Unix()),
+			Member: comment.CommentUuid,
+		}).Err()
+		if err != nil {
+			return err
+		}
 		return err
 	})()
 }
 
-func (s *FeedService) UpdateComment(comment *entities.FeedComment) error {
-	commentKey := CommentKey(comment.CommentUuid)
-	commentVal, err := ToJsonString(comment)
+func (s *FeedService) UpdateComment(newComment *entities.FeedComment) error {
+	commentKey := CommentKey(newComment.CommentUuid)
+	commentVal, err := ToJsonString(newComment)
 	if err != nil {
 		return err
 	}
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
-		err := cli.HSet(ctx, REDIS_COMMENTS_KEY, commentKey, commentVal).Err()
+		oldComment, err := getComment(commentKey, cli, ctx)
 		if err != nil {
 			return err
+		}
+
+		err = cli.HSet(ctx, REDIS_COMMENTS_KEY, commentKey, commentVal).Err()
+		if err != nil {
+			return err
+		}
+
+		if oldComment.CommentState != newComment.CommentState {
+			err = cli.ZRem(ctx, CommentsByStateKey(oldComment.CommentState), oldComment.CommentUuid).Err()
+			if err != nil {
+				return err
+			}
+			err = cli.ZAdd(ctx, CommentsByStateKey(newComment.CommentState), &redis.Z{
+				Score:  float64(newComment.CreateDate.Unix()),
+				Member: newComment.CommentUuid,
+			}).Err()
+			if err != nil {
+				return err
+			}
 		}
 		return err
 	})()
@@ -278,7 +308,15 @@ func (s *FeedService) DeleteComment(postUuid string, commentUuid string) error {
 	commentKey := CommentKey(commentUuid)
 	postCommentsKey := PostCommentsKey(postUuid)
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
-		err := cli.ZRem(ctx, postCommentsKey, commentUuid).Err()
+		comment, err := getComment(commentKey, cli, ctx)
+		if err != nil {
+			return err
+		}
+		err = cli.ZRem(ctx, postCommentsKey, commentUuid).Err()
+		if err != nil {
+			return err
+		}
+		err = cli.ZRem(ctx, CommentsByStateKey(comment.CommentState), comment.CommentUuid).Err()
 		if err != nil {
 			return err
 		}
@@ -382,6 +420,29 @@ func (s *FeedService) GetFeedByState(state string, offset int, limit int) ([]Fee
 	result, ok := data.([]FeedBlock)
 	if !ok {
 		return nil, fmt.Errorf("unable cast to []FeedBlock")
+	}
+	return result, err
+}
+
+func (s *FeedService) GetCommentsByState(state string, offset int, limit int) ([]entities.FeedComment, error) {
+	s.SyncGuard.RLock()
+	defer s.SyncGuard.RUnlock()
+	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
+		commentsUuids, err := getCommentUuidsByState(state, offset, limit, cli, ctx)
+		if err != nil {
+			return nil, err
+		}
+		result, _, err := getComments(toCommentKeys(commentsUuids), cli, ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return result, err
+	})()
+
+	result, ok := data.([]entities.FeedComment)
+	if !ok {
+		return nil, fmt.Errorf("unable cast to []FeedComment")
 	}
 	return result, err
 }
@@ -912,6 +973,10 @@ func FeedByStateKey(state string) string {
 	return "feed_by_state_" + state
 }
 
+func CommentsByStateKey(state string) string {
+	return "comments_by_state_" + state
+}
+
 func FeedByUserKey(userUuid string) string {
 	return "feed_by_user_" + userUuid
 }
@@ -943,6 +1008,15 @@ func getPostUuidsByTagAndState(tagId string, state string, offset int, limit int
 
 func getPostUuidsByState(state string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
 	return cli.ZRangeByScore(ctx, FeedByStateKey(state), &redis.ZRangeBy{
+		Min:    "-inf",
+		Max:    "+inf",
+		Offset: int64(offset),
+		Count:  int64(limit),
+	}).Result()
+}
+
+func getCommentUuidsByState(state string, offset int, limit int, cli *redis.Client, ctx context.Context) ([]string, error) {
+	return cli.ZRangeByScore(ctx, CommentsByStateKey(state), &redis.ZRangeBy{
 		Min:    "-inf",
 		Max:    "+inf",
 		Offset: int64(offset),
@@ -998,6 +1072,22 @@ func getPost(postKey string, cli *redis.Client, ctx context.Context) (entities.F
 		return post, fmt.Errorf("unable to get unmarshal feed post: %v", err)
 	}
 	return post, nil
+}
+
+func getComment(commentKey string, cli *redis.Client, ctx context.Context) (entities.FeedComment, error) {
+	var result entities.FeedComment
+	commentStr, err := cli.HGet(ctx, REDIS_COMMENTS_KEY, commentKey).Result()
+	if commentStr == "" {
+		return result, ErrorRedisNotFound
+	}
+	if err != nil {
+		return result, fmt.Errorf("unable to get comment: %v", err)
+	}
+	err = json.Unmarshal([]byte(commentStr), &result)
+	if err != nil {
+		return result, fmt.Errorf("unable to get unmarshal commentt: %v", err)
+	}
+	return result, nil
 }
 
 func getUser(userKey string, cli *redis.Client, ctx context.Context) (profiles.GetUserResult, error) {

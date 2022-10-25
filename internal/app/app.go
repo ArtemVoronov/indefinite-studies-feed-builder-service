@@ -67,6 +67,7 @@ func createRestApi(logger *logrus.Logger) *gin.Engine {
 		authorized.POST("/feed/sync", app.RequiredOwnerRole(), feedRestApi.Sync)
 		authorized.POST("/feed/clear", app.RequiredOwnerRole(), feedRestApi.Clear)
 		authorized.GET("/feed/users", app.RequiredOwnerRole(), feedRestApi.GetUsers)
+		authorized.GET("/feed/comments", app.RequiredOwnerRole(), feedRestApi.GetComments)
 	}
 
 	return router

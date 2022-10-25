@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
+	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/db/entities"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/api"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
@@ -25,6 +26,13 @@ type UsersListDTO struct {
 	Offset int
 	Limit  int
 	Data   []profiles.GetUserResult
+}
+
+type CommentsListDto struct {
+	Count  int
+	Offset int
+	Limit  int
+	Data   []entities.FeedComment
 }
 
 func GetFeed(c *gin.Context) {
@@ -145,6 +153,44 @@ func GetUsers(c *gin.Context) {
 	result := UsersListDTO{
 		Data:   users,
 		Count:  len(users),
+		Offset: offset,
+		Limit:  limit,
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func GetComments(c *gin.Context) {
+	limitStr := c.DefaultQuery("limit", "10")
+	offsetStr := c.DefaultQuery("offset", "0")
+	state := c.DefaultQuery("state", "")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 10
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		offset = 0
+	}
+
+	if state == "" {
+		state = utilsEntities.COMMENT_STATE_NEW
+	}
+
+	var comments []entities.FeedComment
+	comments, err = services.Instance().Feed().GetCommentsByState(state, offset, limit)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, "Unable to get comments by state")
+		log.Error("Unable to get comments by state", err.Error())
+		return
+	}
+
+	result := &CommentsListDto{
+		Data:   comments,
+		Count:  len(comments),
 		Offset: offset,
 		Limit:  limit,
 	}
