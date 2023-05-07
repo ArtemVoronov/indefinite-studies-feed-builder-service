@@ -4,8 +4,15 @@ services:
     image: redis:6.2-alpine
     ports:
       - '6379:6379'
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--save", "20", "1"]
-    volumes: 
+    command:
+      [
+        "redis-server",
+        "/usr/local/etc/redis/redis.conf",
+        "--save",
+        "20",
+        "1"
+      ]
+    volumes:
       - redis-volume:/redis/data
       - ./configs/redis/redis.conf:/usr/local/etc/redis/redis.conf
       - ./configs/redis/users.acl:/usr/local/etc/redis/users.acl
@@ -19,15 +26,15 @@ services:
       - "50057-50058:50051"
     depends_on:
       - redis
-  
+
   nginx:
     image: nginx
     volumes:
-    - ./configs/templates/nginx:/etc/nginx/templates
+      - ./configs/templates/nginx:/etc/nginx/templates
     ports:
-    - "10006:80"
+      - "10006:80"
     environment:
-    - HOST_API=${HOST_API}
+      - HOST_API=${HOST_API}
     depends_on:
       - api
 
