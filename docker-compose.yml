@@ -1,21 +1,35 @@
 version: "3.9"
 services:
-  redis:
-    image: redis:6.2-alpine
+  # TODO: clean, redis is deprecated
+  # redis:
+  #   image: redis:6.2-alpine
+  #   ports:
+  #     - '6379:6379'
+  #   command:
+  #     [
+  #       "redis-server",
+  #       "/usr/local/etc/redis/redis.conf",
+  #       "--save",
+  #       "20",
+  #       "1"
+  #     ]
+  #   volumes:
+  #     - redis-volume:/redis/data
+  #     - ./configs/redis/redis.conf:/usr/local/etc/redis/redis.conf
+  #     - ./configs/redis/users.acl:/usr/local/etc/redis/users.acl
+
+  mongo:
+    image: mongo
     ports:
-      - '6379:6379'
-    command:
-      [
-        "redis-server",
-        "/usr/local/etc/redis/redis.conf",
-        "--save",
-        "20",
-        "1"
-      ]
+      - "27017:27017"
     volumes:
-      - redis-volume:/redis/data
-      - ./configs/redis/redis.conf:/usr/local/etc/redis/redis.conf
-      - ./configs/redis/users.acl:/usr/local/etc/redis/users.acl
+      - ./configs/mongodb/mongodb-init.js:/docker-entrypoint-initdb.d/mongodb-init.js:ro
+      - mongo-volume:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=mongo_admin
+      - MONGO_INITDB_ROOT_PASSWORD=mongo_admin_password
+      - MONGO_INITDB_DATABASE=feeddb
+
   api:
     build: .
     deploy:
@@ -26,6 +40,7 @@ services:
       - "50057-50058:50051"
     depends_on:
       - redis
+      - mongo
 
   nginx:
     image: nginx
@@ -51,7 +66,10 @@ services:
       - api
 
 volumes:
+  # TODO: clean, redis is deprecated
   redis-volume:
+    driver: local
+  mongo-volume:
     driver: local
 networks:
   default:
