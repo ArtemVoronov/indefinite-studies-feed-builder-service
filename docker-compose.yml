@@ -18,6 +18,30 @@ services:
   #     - ./configs/redis/redis.conf:/usr/local/etc/redis/redis.conf
   #     - ./configs/redis/users.acl:/usr/local/etc/redis/users.acl
 
+  # TODO: uncomment after implementation of interservice reader
+  # zookeeper:
+  #   image: confluentinc/cp-zookeeper:latest
+  #   environment:
+  #     ZOOKEEPER_CLIENT_PORT: 42181
+  #     ZOOKEEPER_TICK_TIME: 2000
+  #   ports:
+  #     - 42181:42181
+
+  # # TODO: add authenication config
+  # kafka:
+  #   image: confluentinc/cp-kafka:latest
+  #   environment:
+  #     KAFKA_BROKER_ID: 1
+  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:42181
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://${KAFKA_HOST}:${KAFKA_PORT}
+  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  #   ports:
+  #     - 49092:49092
+  #   depends_on:
+  #     - zookeeper
+
   mongo:
     image: mongo
     ports:
@@ -39,7 +63,7 @@ services:
       - "3011-3012:3005"
       - "50057-50058:50051"
     depends_on:
-      - redis
+      # - kafka
       - mongo
 
   nginx:

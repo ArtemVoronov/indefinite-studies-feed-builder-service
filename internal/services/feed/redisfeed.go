@@ -90,7 +90,7 @@ type FullPostInfo struct {
 	CommentsMap map[string]FeedCommentWithIndex
 }
 
-type FeedService struct {
+type RedisFeedService struct {
 	redisService    *redisService.RedisService
 	postsService    *posts.PostsGRPCService
 	profilesService *profiles.ProfilesGRPCService
@@ -102,15 +102,15 @@ type FeedCommentWithIndex struct {
 	entities.FeedComment
 }
 
-func CreateFeedService(postsService *posts.PostsGRPCService, profilesService *profiles.ProfilesGRPCService) *FeedService {
-	return &FeedService{
+func CreateFeedService(postsService *posts.PostsGRPCService, profilesService *profiles.ProfilesGRPCService) *RedisFeedService {
+	return &RedisFeedService{
 		redisService:    redisService.CreateRedisService(),
 		postsService:    postsService,
 		profilesService: profilesService,
 	}
 }
 
-func (s *FeedService) Shutdown() error {
+func (s *RedisFeedService) Shutdown() error {
 	result := []error{}
 	err := s.redisService.Shutdown()
 	if err != nil {
@@ -125,12 +125,12 @@ func (s *FeedService) Shutdown() error {
 		result = append(result, err)
 	}
 	if len(result) > 0 {
-		return fmt.Errorf("errors during feed service shutdown: %v", result)
+		return fmt.Errorf("errors during redis feed service shutdown: %v", result)
 	}
 	return nil
 }
 
-func (s *FeedService) CreatePost(post *entities.FeedPost) error {
+func (s *RedisFeedService) CreatePost(post *entities.FeedPost) error {
 	postKey := PostKey(post.PostUuid)
 	postVal, err := ToJsonString(post)
 	if err != nil {
@@ -172,7 +172,7 @@ func (s *FeedService) CreatePost(post *entities.FeedPost) error {
 	})()
 }
 
-func (s *FeedService) UpdatePost(newPost *entities.FeedPost) error {
+func (s *RedisFeedService) UpdatePost(newPost *entities.FeedPost) error {
 	postKey := PostKey(newPost.PostUuid)
 	postVal, err := ToJsonString(newPost)
 	if err != nil {
@@ -233,13 +233,13 @@ func (s *FeedService) UpdatePost(newPost *entities.FeedPost) error {
 	})()
 }
 
-func (s *FeedService) DeletePost(postUuid string) error {
+func (s *RedisFeedService) DeletePost(postUuid string) error {
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
 		return deletePost(postUuid, cli, ctx)
 	})()
 }
 
-func (s *FeedService) CreateComment(comment *entities.FeedComment) error {
+func (s *RedisFeedService) CreateComment(comment *entities.FeedComment) error {
 	postCommentsKey := PostCommentsKey(comment.PostUuid)
 	commentKey := CommentKey(comment.CommentUuid)
 	commentByStateKey := CommentsByStateKey(comment.CommentState)
@@ -270,7 +270,7 @@ func (s *FeedService) CreateComment(comment *entities.FeedComment) error {
 	})()
 }
 
-func (s *FeedService) UpdateComment(newComment *entities.FeedComment) error {
+func (s *RedisFeedService) UpdateComment(newComment *entities.FeedComment) error {
 	commentKey := CommentKey(newComment.CommentUuid)
 	commentVal, err := ToJsonString(newComment)
 	if err != nil {
@@ -304,7 +304,7 @@ func (s *FeedService) UpdateComment(newComment *entities.FeedComment) error {
 	})()
 }
 
-func (s *FeedService) DeleteComment(postUuid string, commentUuid string) error {
+func (s *RedisFeedService) DeleteComment(postUuid string, commentUuid string) error {
 	commentKey := CommentKey(commentUuid)
 	postCommentsKey := PostCommentsKey(postUuid)
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
@@ -328,7 +328,7 @@ func (s *FeedService) DeleteComment(postUuid string, commentUuid string) error {
 	})()
 }
 
-func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
+func (s *RedisFeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
@@ -360,7 +360,7 @@ func (s *FeedService) GetFeed(offset int, limit int) ([]FeedBlock, error) {
 	return result, err
 }
 
-func (s *FeedService) GetFeedByTagAndState(tagId string, state string, offset int, limit int) ([]FeedBlock, error) {
+func (s *RedisFeedService) GetFeedByTagAndState(tagId string, state string, offset int, limit int) ([]FeedBlock, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
@@ -392,7 +392,7 @@ func (s *FeedService) GetFeedByTagAndState(tagId string, state string, offset in
 	return result, err
 }
 
-func (s *FeedService) GetFeedByState(state string, offset int, limit int) ([]FeedBlock, error) {
+func (s *RedisFeedService) GetFeedByState(state string, offset int, limit int) ([]FeedBlock, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
@@ -424,7 +424,7 @@ func (s *FeedService) GetFeedByState(state string, offset int, limit int) ([]Fee
 	return result, err
 }
 
-func (s *FeedService) GetCommentsByState(state string, offset int, limit int) ([]entities.FeedComment, error) {
+func (s *RedisFeedService) GetCommentsByState(state string, offset int, limit int) ([]entities.FeedComment, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
@@ -447,7 +447,7 @@ func (s *FeedService) GetCommentsByState(state string, offset int, limit int) ([
 	return result, err
 }
 
-func (s *FeedService) FeedByUserUuid(userUuid string, offset int, limit int) ([]FeedBlock, error) {
+func (s *RedisFeedService) FeedByUserUuid(userUuid string, offset int, limit int) ([]FeedBlock, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
@@ -479,7 +479,7 @@ func (s *FeedService) FeedByUserUuid(userUuid string, offset int, limit int) ([]
 	return result, err
 }
 
-func (s *FeedService) GetUsers(offset int, limit int) ([]profiles.GetUserResult, error) {
+func (s *RedisFeedService) GetUsers(offset int, limit int) ([]profiles.GetUserResult, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
@@ -506,7 +506,7 @@ func (s *FeedService) GetUsers(offset int, limit int) ([]profiles.GetUserResult,
 	return result, err
 }
 
-func (s *FeedService) GetPost(postUuid string) (*FullPostInfo, error) {
+func (s *RedisFeedService) GetPost(postUuid string) (*FullPostInfo, error) {
 	s.SyncGuard.RLock()
 	defer s.SyncGuard.RUnlock()
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
@@ -535,7 +535,7 @@ func (s *FeedService) GetPost(postUuid string) (*FullPostInfo, error) {
 	return result, err
 }
 
-func (s *FeedService) UpsertUser(user *profiles.GetUserResult) error {
+func (s *RedisFeedService) UpsertUser(user *profiles.GetUserResult) error {
 	userKey := UserKey(user.Uuid)
 	userVal, err := ToJsonString(user)
 	if err != nil {
@@ -553,7 +553,7 @@ func (s *FeedService) UpsertUser(user *profiles.GetUserResult) error {
 	})()
 }
 
-func (s *FeedService) UpsertTag(tag *entities.FeedTag) error {
+func (s *RedisFeedService) UpsertTag(tag *entities.FeedTag) error {
 	tagKey := TagKeyInt(tag.Id)
 	TagVal, err := ToJsonString(tag)
 	if err != nil {
@@ -564,7 +564,7 @@ func (s *FeedService) UpsertTag(tag *entities.FeedTag) error {
 	})()
 }
 
-func (s *FeedService) GetUser(userUuid string) (*profiles.GetUserResult, error) {
+func (s *RedisFeedService) GetUser(userUuid string) (*profiles.GetUserResult, error) {
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		return getUser(UserKey(userUuid), cli, ctx)
 	})()
@@ -578,7 +578,7 @@ func (s *FeedService) GetUser(userUuid string) (*profiles.GetUserResult, error) 
 	return &result, err
 }
 
-func (s *FeedService) GetTag(tagId int) (*entities.FeedTag, error) {
+func (s *RedisFeedService) GetTag(tagId int) (*entities.FeedTag, error) {
 	data, err := s.redisService.WithTimeout(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) (any, error) {
 		return getTag(TagKeyInt(tagId), cli, ctx)
 	})()
@@ -592,11 +592,11 @@ func (s *FeedService) GetTag(tagId int) (*entities.FeedTag, error) {
 	return &result, err
 }
 
-func (s *FeedService) SyncUserDataInFeed(user *profiles.GetUserResult) error {
+func (s *RedisFeedService) SyncUserDataInFeed(user *profiles.GetUserResult) error {
 	return s.syncUserDataInPosts(user)
 }
 
-func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) error {
+func (s *RedisFeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) error {
 	var offset int = 0
 	var limit int = 50
 
@@ -654,11 +654,11 @@ func (s *FeedService) syncUserDataInPosts(updatedUser *profiles.GetUserResult) e
 	return nil
 }
 
-func (s *FeedService) SyncTagDataInFeed(updatedTag *entities.FeedTag) error {
+func (s *RedisFeedService) SyncTagDataInFeed(updatedTag *entities.FeedTag) error {
 	return s.syncTagDataInFeed(updatedTag)
 }
 
-func (s *FeedService) syncTagDataInFeed(updatedTag *entities.FeedTag) error {
+func (s *RedisFeedService) syncTagDataInFeed(updatedTag *entities.FeedTag) error {
 	var offset int = 0
 	var limit int = 50
 	states := utilsEntities.GetPossiblePostStates()
@@ -706,7 +706,7 @@ func (s *FeedService) syncTagDataInFeed(updatedTag *entities.FeedTag) error {
 	return nil
 }
 
-func (s *FeedService) Sync() error {
+func (s *RedisFeedService) Sync() error {
 	s.SyncGuard.Lock()
 	defer s.SyncGuard.Unlock()
 	err := s.syncUsers()
@@ -720,13 +720,13 @@ func (s *FeedService) Sync() error {
 	return s.syncPosts()
 }
 
-func (s *FeedService) Clear() error {
+func (s *RedisFeedService) Clear() error {
 	s.SyncGuard.Lock()
 	defer s.SyncGuard.Unlock()
 	return s.clear()
 }
 
-func (s *FeedService) syncUsers() error {
+func (s *RedisFeedService) syncUsers() error {
 	var shardCount int32 = -1
 	var shard int32 = 0
 	for {
@@ -769,7 +769,7 @@ func (s *FeedService) syncUsers() error {
 	return nil
 }
 
-func (s *FeedService) syncTags() error {
+func (s *RedisFeedService) syncTags() error {
 	var offset int32 = 0
 	var limit int32 = 50
 	for {
@@ -799,7 +799,7 @@ func (s *FeedService) syncTags() error {
 	return nil
 }
 
-func (s *FeedService) syncPosts() error {
+func (s *RedisFeedService) syncPosts() error {
 	var shardCount int32 = -1
 	var shard int32 = 0
 	for {
@@ -855,7 +855,7 @@ func (s *FeedService) syncPosts() error {
 	return nil
 }
 
-func (s *FeedService) syncComments(postUuid string) error {
+func (s *RedisFeedService) syncComments(postUuid string) error {
 	var offset int32 = 0
 	var limit int32 = 50
 	for {
@@ -892,7 +892,7 @@ func (s *FeedService) syncComments(postUuid string) error {
 	return nil
 }
 
-func (s *FeedService) clear() error {
+func (s *RedisFeedService) clear() error {
 	var offset int = 0
 	var limit int = 50
 	return s.redisService.WithTimeoutVoid(func(cli *redis.Client, ctx context.Context, cancel context.CancelFunc) error {
@@ -1216,7 +1216,7 @@ func toCommentKeys(commentUuids []string) []string {
 	return commentKeys
 }
 
-func (s *FeedService) ToFeedPost(post any, authorName string, tags []entities.FeedTag) (*entities.FeedPost, error) {
+func (s *RedisFeedService) ToFeedPost(post any, authorName string, tags []entities.FeedTag) (*entities.FeedPost, error) {
 	switch t := post.(type) {
 	case *feed.CreatePostRequest:
 		return &entities.FeedPost{
@@ -1262,7 +1262,7 @@ func (s *FeedService) ToFeedPost(post any, authorName string, tags []entities.Fe
 	}
 }
 
-func (s *FeedService) ToFeedComment(comment any, authorName string) (*entities.FeedComment, error) {
+func (s *RedisFeedService) ToFeedComment(comment any, authorName string) (*entities.FeedComment, error) {
 	switch t := comment.(type) {
 	case *feed.CreateCommentRequest:
 		return &entities.FeedComment{
@@ -1330,7 +1330,7 @@ func ToFeedTag(tag any) (*entities.FeedTag, error) {
 	}
 }
 
-func (s *FeedService) GetAndCacheTags(tagIds []int) ([]entities.FeedTag, error) {
+func (s *RedisFeedService) GetAndCacheTags(tagIds []int) ([]entities.FeedTag, error) {
 	result := make([]entities.FeedTag, 0, len(tagIds))
 	if len(tagIds) == 0 {
 		return []entities.FeedTag{}, nil
@@ -1345,7 +1345,7 @@ func (s *FeedService) GetAndCacheTags(tagIds []int) ([]entities.FeedTag, error) 
 	return result, nil
 }
 
-func (s *FeedService) GetAndCacheTag(tagId int) (*entities.FeedTag, error) {
+func (s *RedisFeedService) GetAndCacheTag(tagId int) (*entities.FeedTag, error) {
 	tag, err := s.GetTag(tagId)
 	if err != nil && err == ErrorRedisNotFound {
 		getTagResult, errRes := s.postsService.GetTag(int32(tagId))
