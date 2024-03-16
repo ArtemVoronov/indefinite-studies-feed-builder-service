@@ -9,6 +9,7 @@ import (
 	kafkaService "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/kafka"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/mongo"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 const NewPostsTopic = "new_posts"
@@ -73,20 +74,10 @@ func (s *MongoFeedService) StartSync() error {
 		for {
 			select {
 			case <-s.quit:
-				fmt.Printf("kafka consumer quit\n")
+				log.Debug("kafka consumer quit")
 				return
 			case msg := <-msgChannel:
-				// TODO: process different cases base on message topic (new post, deleted post, updated tags)
-				var postWithTagsFromQueue *PostWithTagsFromQueue
-				err := json.Unmarshal([]byte(msg.Value), &postWithTagsFromQueue)
-				if err != nil {
-					log.Error(fmt.Sprintf("Unable to convert json %v to psot", msg.Value), err.Error())
-				} else {
-					// TODO: if post with the UUID is missed -> insert
-					// TODO: if post exists -> add tag
-					s.mongoService.Insert(s.mongoDbName, FeedCommonCollectionName, postWithTagsFromQueue)
-				}
-				fmt.Printf("----------------NEW MESSAGE: %v\n", postWithTagsFromQueue) // todo clean
+				s.processMessageByTopic(msg)
 			}
 		}
 	}()
@@ -95,7 +86,7 @@ func (s *MongoFeedService) StartSync() error {
 		for {
 			select {
 			case <-s.quit:
-				fmt.Printf("kafka consumer quit\n")
+				log.Debug("kafka consumer quit")
 				return
 			case msg := <-errChannel:
 				log.Error("kafka consume error", msg.Error())
@@ -109,5 +100,38 @@ func (s *MongoFeedService) StartSync() error {
 func (s *MongoFeedService) StopSync() error {
 	log.Debug("STOP FEED SYNC")
 	s.quit <- struct{}{}
+	return nil
+}
+
+func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
+	if msg == nil {
+		return fmt.Errorf("nil message")
+	}
+
+	topic := *msg.TopicPartition.Topic
+
+	switch topic {
+	case NewPostsTopic:
+		var postWithTagsFromQueue *PostWithTagsFromQueue
+		err := json.Unmarshal([]byte(msg.Value), &postWithTagsFromQueue)
+		if err != nil {
+			log.Error(fmt.Sprintf("Error during processing topic %v. Unable to convert json %v to post", topic, msg.Value), err.Error())
+		} else {
+			// TODO: save as array
+			s.mongoService.Insert(s.mongoDbName, FeedCommonCollectionName, postWithTagsFromQueue.PostUuid)
+		}
+		fmt.Printf("----------------NEW MESSAGE: %v\n", postWithTagsFromQueue) // todo clean
+	case UpdatedPostsTopic:
+		// TODO
+	case DeletedPostsTopic:
+		// TODO
+	case AssignedTagsToPostsTopic:
+		// TODO
+	case DeletededTagsToPostsTopic:
+		// TODO
+	default:
+		return fmt.Errorf("unknown message Topic: %v", topic)
+	}
+
 	return nil
 }
