@@ -1,12 +1,14 @@
 package feed
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
 	kafkaService "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/kafka"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/mongo"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 )
 
 const NewPostsTopic = "new_posts"
@@ -15,16 +17,30 @@ const DeletedPostsTopic = "deleted_posts"
 const AssignedTagsToPostsTopic = "assigned_tags_to_posts"
 const DeletededTagsToPostsTopic = "deleted_tags_to_posts"
 
+const FeedCommonCollectionName = "feed_all_posts"
+const FeedByTagCollectionPrefix = "feed_by_tag_"
+
+type PostWithTagsFromQueue struct {
+	PostUuid string
+	TagIds   []int
+}
+
 type MongoFeedService struct {
 	mongoService         *mongo.MongoService
 	kafkaConsumerService *kafkaService.KafkaConsumerService
 	quit                 chan struct{}
+	mongoDbName          string
 }
 
 func CreateMongoFeedService(mongoService *mongo.MongoService, kafkaConsumerService *kafkaService.KafkaConsumerService) *MongoFeedService {
+	quit := make(chan struct{})
+	mongoDbName := utils.EnvVar("MONGO_DB_NAME")
+
 	return &MongoFeedService{
 		mongoService:         mongoService,
 		kafkaConsumerService: kafkaConsumerService,
+		quit:                 quit,
+		mongoDbName:          mongoDbName,
 	}
 }
 
@@ -46,10 +62,11 @@ func (s *MongoFeedService) Shutdown() error {
 }
 
 func (s *MongoFeedService) StartSync() error {
-	// TODO: start reading queue from kafka and enable sync process
+	log.Debug("START FEED SYNC")
 
-	fmt.Println("-------------START FEED SYNC-------------")
-	s.quit = make(chan struct{})
+	//TODO: process error when topics are missed:
+	//{"@timestamp":"2024-03-16T07:27:47Z","cause":"consumer error: Subscribed topic not available: deleted_posts: Broker: Unknown topic or partition","level":"error","message":"kafka consume error"}
+	//{"@timestamp":"2024-03-16T07:27:47Z","cause":"consumer error: Subscribed topic not available: new_posts: Broker: Unknown topic or partition","level":"error","message":"kafka consume error"}
 	msgChannel, errChannel := s.kafkaConsumerService.SubscribeTopics(s.quit, []string{NewPostsTopic, DeletedPostsTopic}, 5*time.Second)
 
 	go func() {
@@ -59,8 +76,17 @@ func (s *MongoFeedService) StartSync() error {
 				fmt.Printf("kafka consumer quit\n")
 				return
 			case msg := <-msgChannel:
-				fmt.Printf("----------------NEW MESSAGE: %v\n", msg.Value)
-				//TODO: add to the appropruate feed
+				// TODO: process different cases base on message topic (new post, deleted post, updated tags)
+				var postWithTagsFromQueue *PostWithTagsFromQueue
+				err := json.Unmarshal([]byte(msg.Value), &postWithTagsFromQueue)
+				if err != nil {
+					log.Error(fmt.Sprintf("Unable to convert json %v to psot", msg.Value), err.Error())
+				} else {
+					// TODO: if post with the UUID is missed -> insert
+					// TODO: if post exists -> add tag
+					s.mongoService.Insert(s.mongoDbName, FeedCommonCollectionName, postWithTagsFromQueue)
+				}
+				fmt.Printf("----------------NEW MESSAGE: %v\n", postWithTagsFromQueue) // todo clean
 			}
 		}
 	}()
@@ -81,7 +107,7 @@ func (s *MongoFeedService) StartSync() error {
 }
 
 func (s *MongoFeedService) StopSync() error {
-	fmt.Println("-------------STOP FEED SYNC-------------") // TODO: clean
+	log.Debug("STOP FEED SYNC")
 	s.quit <- struct{}{}
 	return nil
 }
