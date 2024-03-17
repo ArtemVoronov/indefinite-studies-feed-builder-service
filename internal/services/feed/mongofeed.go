@@ -78,7 +78,8 @@ func (s *MongoFeedService) StartSync() error {
 	//TODO: process error when topics are missed:
 	//{"@timestamp":"2024-03-16T07:27:47Z","cause":"consumer error: Subscribed topic not available: deleted_posts: Broker: Unknown topic or partition","level":"error","message":"kafka consume error"}
 	//{"@timestamp":"2024-03-16T07:27:47Z","cause":"consumer error: Subscribed topic not available: new_posts: Broker: Unknown topic or partition","level":"error","message":"kafka consume error"}
-	msgChannel, errChannel, err := s.kafkaConsumerService.SubscribeTopics(s.quit, []string{NewPostsTopic, DeletedPostsTopic}, 5*time.Second)
+	// msgChannel, errChannel, err := s.kafkaConsumerService.SubscribeTopics(s.quit, []string{NewPostsTopic, DeletedPostsTopic}, 5*time.Second)
+	msgChannel, errChannel, err := s.kafkaConsumerService.SubscribeTopics(s.quit, []string{NewPostsTopic}, 5*time.Second)
 	if err != nil {
 		return err
 	}

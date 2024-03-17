@@ -55,9 +55,9 @@ func GetFeed(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, "Unable to parse tag id")
 			return
 		}
-		feedBlocks, err = services.Instance().MongoFeed().GetFeedByTag(tagId, offset, limit)
+		feedBlocks, err = services.Instance().MongoFeed().GetFeedByTag(tagId, limit, offset)
 	} else {
-		feedBlocks, err = services.Instance().MongoFeed().GetFeed(offset, limit)
+		feedBlocks, err = services.Instance().MongoFeed().GetFeed(limit, offset)
 	}
 
 	if err != nil {
