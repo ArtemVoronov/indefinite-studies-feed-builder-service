@@ -131,11 +131,11 @@ func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
 		var postWithTagsFromQueue *PostWithTagsFromQueue
 		err := json.Unmarshal([]byte(msg.Value), &postWithTagsFromQueue)
 		if err != nil {
-			return fmt.Errorf("Error during processing topic %v. Unable to convert json %v to post", topic, msg.Value)
+			return fmt.Errorf("error during processing topic %v. Unable to convert json %v to post", topic, msg.Value)
 		} else {
 			parsedUUID, err := uuid.Parse(postWithTagsFromQueue.PostUuid)
 			if err != nil {
-				return fmt.Errorf("Unable to parsk uuid: %v", postWithTagsFromQueue.PostUuid)
+				return fmt.Errorf("unable to parsk uuid: %v", postWithTagsFromQueue.PostUuid)
 			}
 			return s.StorePostAtFeed(parsedUUID, postWithTagsFromQueue.TagIds...)
 		}
@@ -161,7 +161,7 @@ func (s *MongoFeedService) StorePostAtFeed(uuid uuid.UUID, tagIds ...int) error 
 		return err
 	}
 	for _, tagId := range tagIds {
-		collectionName := fmt.Sprintf("%v%v", FeedByTagCollectionPrefix, tagId)
+		collectionName := s.GetCollectionNameByTag(tagId)
 		err := s.storePostAtFeed(uuid, collectionName)
 		if err != nil && mongo.IsDuplicateKeyError(errors.Cause(err)) {
 			log.Error(fmt.Sprintf("unable to insert document '%v' to collection '%v'", uuid, collectionName), err.Error())
@@ -171,14 +171,28 @@ func (s *MongoFeedService) StorePostAtFeed(uuid uuid.UUID, tagIds ...int) error 
 	return nil
 }
 
-func (s *MongoFeedService) GetFeed(collectionName string, limit int64, offset int64) ([]string, error) {
+func (s *MongoFeedService) GetCollectionNameByTag(tagId int) string {
+	return fmt.Sprintf("%v%v", FeedByTagCollectionPrefix, tagId)
+}
+
+func (s *MongoFeedService) GetFeed(limit int, offset int) ([]string, error) {
+	return s.getFeed(FeedCommonCollectionName, limit, offset)
+}
+
+func (s *MongoFeedService) GetFeedByTag(tagId int, limit int, offset int) ([]string, error) {
+	return s.getFeed(s.GetCollectionNameByTag(tagId), limit, offset)
+}
+
+func (s *MongoFeedService) getFeed(collectionName string, limit int, offset int) ([]string, error) {
+	limit64 := int64(limit)
+	offset64 := int64(offset)
 	collection := s.mongoService.GetCollection(s.mongoDbName, collectionName)
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.mongoService.QueryTimeout)
 	defer cancel()
 
 	filter := bson.D{}
-	opts := options.Find().SetSkip(offset).SetLimit(limit).SetSort(bson.D{{"_id", -1}})
+	opts := options.Find().SetSkip(offset64).SetLimit(limit64).SetSort(bson.D{{"_id", -1}})
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, err
