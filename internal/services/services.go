@@ -105,6 +105,10 @@ func (s *Services) Profiles() *profiles.ProfilesGRPCService {
 	return s.profiles
 }
 
-func (s *Services) Feed() *feed.RedisFeedService {
+func (s *Services) RedisFeed() *feed.RedisFeedService {
 	return s.redisfeed
+}
+
+func (s *Services) MongoFeed() *feed.MongoFeedService {
+	return s.mongofeed
 }

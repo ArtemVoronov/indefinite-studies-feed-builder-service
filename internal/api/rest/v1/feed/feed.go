@@ -59,11 +59,11 @@ func GetFeed(c *gin.Context) {
 	var feedBlocks []feed.FeedBlock
 	if userUuid != "" {
 		// TODO: by user and state
-		feedBlocks, err = services.Instance().Feed().FeedByUserUuid(userUuid, offset, limit)
+		feedBlocks, err = services.Instance().RedisFeed().FeedByUserUuid(userUuid, offset, limit)
 	} else if tagId != "" {
-		feedBlocks, err = services.Instance().Feed().GetFeedByTagAndState(tagId, state, offset, limit)
+		feedBlocks, err = services.Instance().RedisFeed().GetFeedByTagAndState(tagId, state, offset, limit)
 	} else {
-		feedBlocks, err = services.Instance().Feed().GetFeedByState(state, offset, limit)
+		feedBlocks, err = services.Instance().RedisFeed().GetFeedByState(state, offset, limit)
 	}
 
 	if err != nil {
@@ -90,7 +90,7 @@ func GetPost(c *gin.Context) {
 		return
 	}
 
-	result, err := services.Instance().Feed().GetPost(postUuid)
+	result, err := services.Instance().RedisFeed().GetPost(postUuid)
 	if err != nil {
 		if err == feed.ErrorRedisNotFound {
 			c.JSON(http.StatusNotFound, api.PAGE_NOT_FOUND)
@@ -106,7 +106,7 @@ func GetPost(c *gin.Context) {
 }
 
 func Sync(c *gin.Context) {
-	err := services.Instance().Feed().Sync()
+	err := services.Instance().RedisFeed().Sync()
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to sync feed")
@@ -118,7 +118,7 @@ func Sync(c *gin.Context) {
 }
 
 func Clear(c *gin.Context) {
-	err := services.Instance().Feed().Clear()
+	err := services.Instance().RedisFeed().Clear()
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to clear feed")
@@ -143,7 +143,7 @@ func GetUsers(c *gin.Context) {
 		offset = 0
 	}
 
-	users, err := services.Instance().Feed().GetUsers(offset, limit)
+	users, err := services.Instance().RedisFeed().GetUsers(offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to get feed users")
 		log.Error("Unable to get feed users", err.Error())
@@ -180,7 +180,7 @@ func GetComments(c *gin.Context) {
 	}
 
 	var comments []entities.FeedComment
-	comments, err = services.Instance().Feed().GetCommentsByState(state, offset, limit)
+	comments, err = services.Instance().RedisFeed().GetCommentsByState(state, offset, limit)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Unable to get comments by state")
