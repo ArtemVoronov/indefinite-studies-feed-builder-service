@@ -1,15 +1,21 @@
 package feed
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
 	kafkaService "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/kafka"
-	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/mongo"
+	mongoUtils "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/mongo"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const NewPostsTopic = "new_posts"
@@ -26,14 +32,18 @@ type PostWithTagsFromQueue struct {
 	TagIds   []int
 }
 
+type PostInMongoDB struct {
+	ID uuid.UUID `bson:"_id" json:"id"`
+}
+
 type MongoFeedService struct {
-	mongoService         *mongo.MongoService
+	mongoService         *mongoUtils.MongoService
 	kafkaConsumerService *kafkaService.KafkaConsumerService
 	quit                 chan struct{}
 	mongoDbName          string
 }
 
-func CreateMongoFeedService(mongoService *mongo.MongoService, kafkaConsumerService *kafkaService.KafkaConsumerService) *MongoFeedService {
+func CreateMongoFeedService(mongoService *mongoUtils.MongoService, kafkaConsumerService *kafkaService.KafkaConsumerService) *MongoFeedService {
 	quit := make(chan struct{})
 	mongoDbName := utils.EnvVar("MONGO_DB_NAME")
 
@@ -68,7 +78,10 @@ func (s *MongoFeedService) StartSync() error {
 	//TODO: process error when topics are missed:
 	//{"@timestamp":"2024-03-16T07:27:47Z","cause":"consumer error: Subscribed topic not available: deleted_posts: Broker: Unknown topic or partition","level":"error","message":"kafka consume error"}
 	//{"@timestamp":"2024-03-16T07:27:47Z","cause":"consumer error: Subscribed topic not available: new_posts: Broker: Unknown topic or partition","level":"error","message":"kafka consume error"}
-	msgChannel, errChannel := s.kafkaConsumerService.SubscribeTopics(s.quit, []string{NewPostsTopic, DeletedPostsTopic}, 5*time.Second)
+	msgChannel, errChannel, err := s.kafkaConsumerService.SubscribeTopics(s.quit, []string{NewPostsTopic, DeletedPostsTopic}, 5*time.Second)
+	if err != nil {
+		return err
+	}
 
 	go func() {
 		for {
@@ -77,7 +90,10 @@ func (s *MongoFeedService) StartSync() error {
 				log.Debug("kafka consumer quit")
 				return
 			case msg := <-msgChannel:
-				s.processMessageByTopic(msg)
+				err := s.processMessageByTopic(msg)
+				if err != nil {
+					log.Error(fmt.Sprintf("unable ot process message with topic %v", msg.TopicPartition.Topic), err.Error())
+				}
 			}
 		}
 	}()
@@ -115,12 +131,14 @@ func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
 		var postWithTagsFromQueue *PostWithTagsFromQueue
 		err := json.Unmarshal([]byte(msg.Value), &postWithTagsFromQueue)
 		if err != nil {
-			log.Error(fmt.Sprintf("Error during processing topic %v. Unable to convert json %v to post", topic, msg.Value), err.Error())
+			return fmt.Errorf("Error during processing topic %v. Unable to convert json %v to post", topic, msg.Value)
 		} else {
-			// TODO: save as array
-			s.mongoService.Insert(s.mongoDbName, FeedCommonCollectionName, postWithTagsFromQueue.PostUuid)
+			parsedUUID, err := uuid.Parse(postWithTagsFromQueue.PostUuid)
+			if err != nil {
+				return fmt.Errorf("Unable to parsk uuid: %v", postWithTagsFromQueue.PostUuid)
+			}
+			return s.StorePostAtFeed(parsedUUID, postWithTagsFromQueue.TagIds...)
 		}
-		fmt.Printf("----------------NEW MESSAGE: %v\n", postWithTagsFromQueue) // todo clean
 	case UpdatedPostsTopic:
 		// TODO
 	case DeletedPostsTopic:
@@ -131,6 +149,66 @@ func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
 		// TODO
 	default:
 		return fmt.Errorf("unknown message Topic: %v", topic)
+	}
+
+	return nil
+}
+
+func (s *MongoFeedService) StorePostAtFeed(uuid uuid.UUID, tagIds ...int) error {
+	err := s.storePostAtFeed(uuid, FeedCommonCollectionName)
+	if err != nil && mongo.IsDuplicateKeyError(errors.Cause(err)) {
+		log.Error(fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", uuid, FeedCommonCollectionName), err.Error())
+		return err
+	}
+	for _, tagId := range tagIds {
+		collectionName := fmt.Sprintf("%v%v", FeedByTagCollectionPrefix, tagId)
+		err := s.storePostAtFeed(uuid, collectionName)
+		if err != nil && mongo.IsDuplicateKeyError(errors.Cause(err)) {
+			log.Error(fmt.Sprintf("unable to insert document '%v' to collection '%v'", uuid, collectionName), err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *MongoFeedService) GetFeed(collectionName string, limit int64, offset int64) ([]string, error) {
+	collection := s.mongoService.GetCollection(s.mongoDbName, collectionName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.mongoService.QueryTimeout)
+	defer cancel()
+
+	filter := bson.D{}
+	opts := options.Find().SetSkip(offset).SetLimit(limit).SetSort(bson.D{{"_id", -1}})
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var posts []PostInMongoDB
+
+	err = cursor.All(ctx, &posts)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(posts))
+
+	for _, post := range posts {
+		result = append(result, post.ID.String())
+	}
+	return result, nil
+}
+
+func (s *MongoFeedService) storePostAtFeed(uuid uuid.UUID, collectionName string) error {
+	collection := s.mongoService.GetCollection(s.mongoDbName, collectionName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.mongoService.QueryTimeout)
+	defer cancel()
+
+	document := bson.D{{"_id", uuid}}
+	_, err := collection.InsertOne(ctx, document)
+	if err != nil {
+		return errors.Wrap(err, fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", uuid, FeedCommonCollectionName))
 	}
 
 	return nil
