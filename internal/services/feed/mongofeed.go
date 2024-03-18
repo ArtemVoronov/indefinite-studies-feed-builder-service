@@ -159,14 +159,14 @@ func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
 
 func (s *MongoFeedService) StorePostAtFeed(uuid uuid.UUID, createDate time.Time, tagIds ...int) error {
 	err := s.storePostAtFeed(uuid, createDate, FeedCommonCollectionName)
-	if err != nil && mongo.IsDuplicateKeyError(errors.Cause(err)) {
+	if err != nil && !mongo.IsDuplicateKeyError(errors.Cause(err)) {
 		log.Error(fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", uuid, FeedCommonCollectionName), err.Error())
 		return err
 	}
 	for _, tagId := range tagIds {
 		collectionName := s.GetCollectionNameByTag(tagId)
 		err := s.storePostAtFeed(uuid, createDate, collectionName)
-		if err != nil && mongo.IsDuplicateKeyError(errors.Cause(err)) {
+		if err != nil && !mongo.IsDuplicateKeyError(errors.Cause(err)) {
 			log.Error(fmt.Sprintf("unable to insert document '%v' to collection '%v'", uuid, collectionName), err.Error())
 			return err
 		}
