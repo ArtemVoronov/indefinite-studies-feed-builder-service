@@ -56,7 +56,6 @@ func createRestApi(logger *logrus.Logger) *gin.Engine {
 
 	v1.GET("/feed/ping", ping.Ping)
 	v1.GET("/feed", feedRestApi.GetFeed)
-	v1.GET("/feed/:uuid", feedRestApi.GetPost)
 
 	authorized := router.Group("/api/v1")
 	authorized.Use(app.AuthReqired(authenicate))
@@ -64,10 +63,8 @@ func createRestApi(logger *logrus.Logger) *gin.Engine {
 		authorized.GET("/feed/debug/vars", app.RequiredOwnerRole(), expvar.Handler())
 		authorized.GET("/feed/safe-ping", app.RequiredOwnerRole(), ping.SafePing)
 
-		authorized.POST("/feed/sync", app.RequiredOwnerRole(), feedRestApi.Sync)
-		authorized.POST("/feed/clear", app.RequiredOwnerRole(), feedRestApi.Clear)
-		authorized.GET("/feed/users", app.RequiredOwnerRole(), feedRestApi.GetUsers)
-		authorized.GET("/feed/comments", app.RequiredOwnerRole(), feedRestApi.GetComments)
+		authorized.POST("/feed/sync/start", app.RequiredOwnerRole(), feedRestApi.StartSync)
+		authorized.POST("/feed/sync/stop", app.RequiredOwnerRole(), feedRestApi.StopSync)
 	}
 
 	return router
