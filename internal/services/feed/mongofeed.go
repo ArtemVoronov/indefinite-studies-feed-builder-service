@@ -28,12 +28,14 @@ const FeedCommonCollectionName = "feed_all_posts"
 const FeedByTagCollectionPrefix = "feed_by_tag_"
 
 type PostWithTagsFromQueue struct {
-	PostUuid string
-	TagIds   []int
+	PostUuid   string
+	CreateDate time.Time
+	TagIds     []int
 }
 
 type PostInMongoDB struct {
-	ID uuid.UUID `bson:"_id" json:"id"`
+	ID         uuid.UUID `bson:"_id" json:"id"`
+	CreateDate time.Time `bson:"createDate" json:"createDate"`
 }
 
 type MongoFeedService struct {
@@ -136,9 +138,9 @@ func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
 		} else {
 			parsedUUID, err := uuid.Parse(postWithTagsFromQueue.PostUuid)
 			if err != nil {
-				return fmt.Errorf("unable to parsk uuid: %v", postWithTagsFromQueue.PostUuid)
+				return fmt.Errorf("unable to parse uuid: %v", postWithTagsFromQueue.PostUuid)
 			}
-			return s.StorePostAtFeed(parsedUUID, postWithTagsFromQueue.TagIds...)
+			return s.StorePostAtFeed(parsedUUID, postWithTagsFromQueue.CreateDate, postWithTagsFromQueue.TagIds...)
 		}
 	case UpdatedPostsTopic:
 		// TODO
@@ -155,15 +157,15 @@ func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
 	return nil
 }
 
-func (s *MongoFeedService) StorePostAtFeed(uuid uuid.UUID, tagIds ...int) error {
-	err := s.storePostAtFeed(uuid, FeedCommonCollectionName)
+func (s *MongoFeedService) StorePostAtFeed(uuid uuid.UUID, createDate time.Time, tagIds ...int) error {
+	err := s.storePostAtFeed(uuid, createDate, FeedCommonCollectionName)
 	if err != nil && mongo.IsDuplicateKeyError(errors.Cause(err)) {
 		log.Error(fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", uuid, FeedCommonCollectionName), err.Error())
 		return err
 	}
 	for _, tagId := range tagIds {
 		collectionName := s.GetCollectionNameByTag(tagId)
-		err := s.storePostAtFeed(uuid, collectionName)
+		err := s.storePostAtFeed(uuid, createDate, collectionName)
 		if err != nil && mongo.IsDuplicateKeyError(errors.Cause(err)) {
 			log.Error(fmt.Sprintf("unable to insert document '%v' to collection '%v'", uuid, collectionName), err.Error())
 			return err
@@ -193,7 +195,7 @@ func (s *MongoFeedService) getFeed(collectionName string, limit int, offset int)
 	defer cancel()
 
 	filter := bson.D{}
-	opts := options.Find().SetSkip(offset64).SetLimit(limit64).SetSort(bson.D{{"_id", -1}})
+	opts := options.Find().SetSkip(offset64).SetLimit(limit64).SetSort(bson.D{{"createDate", -1}})
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, err
@@ -214,13 +216,13 @@ func (s *MongoFeedService) getFeed(collectionName string, limit int, offset int)
 	return result, nil
 }
 
-func (s *MongoFeedService) storePostAtFeed(uuid uuid.UUID, collectionName string) error {
+func (s *MongoFeedService) storePostAtFeed(uuid uuid.UUID, createDate time.Time, collectionName string) error {
 	collection := s.mongoService.GetCollection(s.mongoDbName, collectionName)
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.mongoService.QueryTimeout)
 	defer cancel()
 
-	document := bson.D{{"_id", uuid}}
+	document := bson.D{{"_id", uuid}, {"createDate", createDate}}
 	_, err := collection.InsertOne(ctx, document)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", uuid, FeedCommonCollectionName))
