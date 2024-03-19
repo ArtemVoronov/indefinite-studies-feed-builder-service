@@ -6,10 +6,9 @@ db.createUser(
         roles: [
             {
                 role: "readWrite",
-                db: "testdb"
+                db: "feeddb"
             }
         ]
     }
 );
-db.createCollection('records');
 print('#################################################################');

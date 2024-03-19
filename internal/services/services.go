@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services/feed"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/app"
@@ -51,14 +52,21 @@ func createServices() *Services {
 	postsService := posts.CreatePostsGRPCService(utils.EnvVar("POSTS_SERVICE_GRPC_HOST")+":"+utils.EnvVar("POSTS_SERVICE_GRPC_PORT"), &postsCreds)
 	profilesService := profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilesCreds)
 
+	kafkaAdminQueryTimeout := utils.EnvVarDurationDefault("KAFKA_ADMIN_QUERY_TIMEOUT_IN_SECONDS", time.Second, 30*time.Second)
+	kafkaReadMessageTimeout := utils.EnvVarDurationDefault("KAFKA_READ_MESSAGE_TIMEOUT_IN_SECONDS", time.Second, 5*time.Second)
 	kafkaConsumerService, err := kafkaService.CreateKafkaConsumerService(utils.EnvVar("KAFKA_HOST")+":"+utils.EnvVar("KAFKA_PORT"), utils.EnvVar("KAFKA_GROUP_ID"))
+	if err != nil {
+		log.Fatalf("unable to create kafka consumer: %s", err)
+	}
+
+	kafkaAdminService, err := kafkaService.CreateKafkaAdminService(utils.EnvVar("KAFKA_HOST")+":"+utils.EnvVar("KAFKA_PORT"), kafkaAdminQueryTimeout)
 	if err != nil {
 		log.Fatalf("unable to create kafka consumer: %s", err)
 	}
 
 	mongoService := mongo.CreateMongoService()
 
-	mongofeed := feed.CreateMongoFeedService(mongoService, kafkaConsumerService)
+	mongofeed := feed.CreateMongoFeedService(mongoService, kafkaConsumerService, kafkaAdminService, kafkaReadMessageTimeout)
 	if err != nil {
 		log.Fatalf("unable to create mongo feed service: %s", err)
 	}

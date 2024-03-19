@@ -37,6 +37,8 @@ func GetFeed(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "10")
 	offsetStr := c.DefaultQuery("offset", "0")
 	tagIdStr := c.DefaultQuery("tagId", "")
+	state := c.DefaultQuery("state", "")
+	userUuid := c.DefaultQuery("userUuid", "")
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
@@ -49,15 +51,17 @@ func GetFeed(c *gin.Context) {
 	}
 
 	var feedBlocks []string
-	if tagIdStr != "" {
+	if len(userUuid) > 0 {
+		feedBlocks, err = services.Instance().MongoFeed().GetFeedByUser(userUuid, state, limit, offset)
+	} else if len(tagIdStr) > 0 {
 		tagId, err := strconv.Atoi(tagIdStr)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, "Unable to parse tag id")
 			return
 		}
-		feedBlocks, err = services.Instance().MongoFeed().GetFeedByTag(tagId, limit, offset)
+		feedBlocks, err = services.Instance().MongoFeed().GetFeedByTag(tagId, state, limit, offset)
 	} else {
-		feedBlocks, err = services.Instance().MongoFeed().GetFeed(limit, offset)
+		feedBlocks, err = services.Instance().MongoFeed().GetFeed(state, limit, offset)
 	}
 
 	if err != nil {
