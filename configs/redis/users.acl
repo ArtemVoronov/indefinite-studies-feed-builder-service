@@ -1,1 +1,0 @@
-user feed_builder_service on ~* +@all >testpwd

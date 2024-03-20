@@ -3,21 +3,17 @@ module github.com/ArtemVoronov/indefinite-studies-feed-builder-service
 go 1.21
 
 require (
-	github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240319090605-0b956188dec0
+	github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240319140036-a53466828537
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/gin-contrib/expvar v0.0.1
 	github.com/gin-gonic/gin v1.8.1
-	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/uuid v1.3.0
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.9.0
 	go.mongodb.org/mongo-driver v1.14.0
-	google.golang.org/grpc v1.49.0
 )
 
 require (
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect
@@ -46,6 +42,7 @@ require (
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/genproto v0.0.0-20220503193339-ba3ae3f07e29 // indirect
+	google.golang.org/grpc v1.49.0 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

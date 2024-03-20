@@ -5,7 +5,7 @@ down() {
 }
 
 purge() {
-    docker volume rm indefinite-studies-feed-builder-service_redis-volume
+    docker volume rm indefinite-studies-feed-builder-service_mongo-volume
 }  
 
 build() {

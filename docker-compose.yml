@@ -1,22 +1,5 @@
 version: "3.9"
 services:
-  # TODO: clean, redis is deprecated
-  # redis:
-  #   image: redis:6.2-alpine
-  #   ports:
-  #     - '6379:6379'
-  #   command:
-  #     [
-  #       "redis-server",
-  #       "/usr/local/etc/redis/redis.conf",
-  #       "--save",
-  #       "20",
-  #       "1"
-  #     ]
-  #   volumes:
-  #     - redis-volume:/redis/data
-  #     - ./configs/redis/redis.conf:/usr/local/etc/redis/redis.conf
-  #     - ./configs/redis/users.acl:/usr/local/etc/redis/users.acl
 
   # TODO: uncomment after implementation of interservice reader
   # zookeeper:
@@ -63,7 +46,6 @@ services:
       - "3011-3012:3005"
       - "50057-50058:50051"
     depends_on:
-      # - kafka
       - mongo
 
   nginx:
@@ -90,9 +72,6 @@ services:
       - api
 
 volumes:
-  # TODO: clean, redis is deprecated
-  redis-volume:
-    driver: local
   mongo-volume:
     driver: local
 networks:

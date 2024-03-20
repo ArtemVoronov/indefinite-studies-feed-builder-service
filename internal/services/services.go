@@ -11,16 +11,13 @@ import (
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/auth"
 	kafkaService "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/kafka"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/mongo"
-	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/posts"
-	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/profiles"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
 )
 
-// TODO: clean redis feed service
+// TODO: add service for synchronization of post's and feed's services queues
+
 type Services struct {
-	profiles  *profiles.ProfilesGRPCService
 	auth      *auth.AuthGRPCService
-	redisfeed *feed.RedisFeedService
 	mongofeed *feed.MongoFeedService
 }
 
@@ -41,16 +38,6 @@ func createServices() *Services {
 	if err != nil {
 		log.Fatalf("unable to load TLS credentials: %s", err)
 	}
-	profilesCreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("PROFILES_SERVICE_CLIENT_TLS_CERT_PATH"))
-	if err != nil {
-		log.Fatalf("unable to load TLS credentials: %s", err)
-	}
-	postsCreds, err := app.LoadTLSCredentialsForClient(utils.EnvVar("POSTS_SERVICE_CLIENT_TLS_CERT_PATH"))
-	if err != nil {
-		log.Fatalf("unable to load TLS credentials: %s", err)
-	}
-	postsService := posts.CreatePostsGRPCService(utils.EnvVar("POSTS_SERVICE_GRPC_HOST")+":"+utils.EnvVar("POSTS_SERVICE_GRPC_PORT"), &postsCreds)
-	profilesService := profiles.CreateProfilesGRPCService(utils.EnvVar("PROFILES_SERVICE_GRPC_HOST")+":"+utils.EnvVar("PROFILES_SERVICE_GRPC_PORT"), &profilesCreds)
 
 	kafkaAdminQueryTimeout := utils.EnvVarDurationDefault("KAFKA_ADMIN_QUERY_TIMEOUT_IN_SECONDS", time.Second, 30*time.Second)
 	kafkaReadMessageTimeout := utils.EnvVarDurationDefault("KAFKA_READ_MESSAGE_TIMEOUT_IN_SECONDS", time.Second, 5*time.Second)
@@ -66,32 +53,24 @@ func createServices() *Services {
 
 	mongoService := mongo.CreateMongoService()
 
-	mongofeed := feed.CreateMongoFeedService(mongoService, kafkaConsumerService, kafkaAdminService, kafkaReadMessageTimeout)
+	mongoFeedService := feed.CreateMongoFeedService(mongoService, kafkaConsumerService, kafkaAdminService, kafkaReadMessageTimeout)
 	if err != nil {
 		log.Fatalf("unable to create mongo feed service: %s", err)
 	}
 
-	mongofeed.StartSync()
+	mongoFeedService.StartSync()
+
+	authService := auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authCreds)
 
 	return &Services{
-		profiles:  profilesService,
-		auth:      auth.CreateAuthGRPCService(utils.EnvVar("AUTH_SERVICE_GRPC_HOST")+":"+utils.EnvVar("AUTH_SERVICE_GRPC_PORT"), &authCreds),
-		redisfeed: feed.CreateFeedService(postsService, profilesService),
-		mongofeed: mongofeed,
+		auth:      authService,
+		mongofeed: mongoFeedService,
 	}
 }
 
 func (s *Services) Shutdown() error {
 	result := []error{}
-	err := s.profiles.Shutdown()
-	if err != nil {
-		result = append(result, err)
-	}
-	err = s.auth.Shutdown()
-	if err != nil {
-		result = append(result, err)
-	}
-	err = s.redisfeed.Shutdown()
+	err := s.auth.Shutdown()
 	if err != nil {
 		result = append(result, err)
 	}
@@ -107,14 +86,6 @@ func (s *Services) Shutdown() error {
 
 func (s *Services) Auth() *auth.AuthGRPCService {
 	return s.auth
-}
-
-func (s *Services) Profiles() *profiles.ProfilesGRPCService {
-	return s.profiles
-}
-
-func (s *Services) RedisFeed() *feed.RedisFeedService {
-	return s.redisfeed
 }
 
 func (s *Services) MongoFeed() *feed.MongoFeedService {

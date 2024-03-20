@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 
-	feedGrpcApi "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/grpc/v1/feed"
 	feedRestApi "github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/rest/v1/feed"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/api/rest/v1/ping"
 	"github.com/ArtemVoronov/indefinite-studies-feed-builder-service/internal/services"
@@ -15,7 +14,6 @@ import (
 	"github.com/gin-contrib/expvar"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
 )
 
 func Start() {
@@ -24,10 +22,6 @@ func Start() {
 	if file != nil {
 		defer file.Close()
 	}
-	creds := app.TLSCredentials()
-	go func() {
-		app.StartGRPC(setup, shutdown, app.HostGRPC(), createGrpcApi, &creds, log.Instance())
-	}()
 	app.StartHTTP(setup, shutdown, app.HostHTTP(), createRestApi(log.Instance()))
 }
 
@@ -68,10 +62,6 @@ func createRestApi(logger *logrus.Logger) *gin.Engine {
 	}
 
 	return router
-}
-
-func createGrpcApi(s *grpc.Server) {
-	feedGrpcApi.RegisterServiceServer(s)
 }
 
 func authenicate(token string) (*auth.VerificationResult, error) {
