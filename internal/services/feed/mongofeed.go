@@ -22,12 +22,16 @@ const NewPostsTopic = "new_posts"
 const UpdatedPostsStatesTopic = "updated_posts_states"
 const UpdatedPostsTagsTopic = "updated_posts_tags"
 const DeletedPostsTopic = "deleted_posts"
+const NewCommentsTopic = "new_comments"
+const UpdatedCommentsStatesTopic = "updated_comments_states"
+const DeletedCommentsTopic = "deleted_comments"
 
-var AllTopics []string = []string{NewPostsTopic, UpdatedPostsStatesTopic, UpdatedPostsTagsTopic, DeletedPostsTopic}
+var AllTopics []string = []string{NewPostsTopic, UpdatedPostsStatesTopic, UpdatedPostsTagsTopic, DeletedPostsTopic, NewCommentsTopic, UpdatedCommentsStatesTopic, DeletedCommentsTopic}
 
 const FeedCommonCollectionName = "feed_all_posts"
 const FeedByTagCollectionPrefix = "feed_by_tag_"
 const FeedByUserCollectionPrefix = "feed_by_user_"
+const CommentsCollectionPrefix = "comments_by_post_"
 
 type PostWithTagsFromQueue struct {
 	PostUuid   uuid.UUID
@@ -37,8 +41,26 @@ type PostWithTagsFromQueue struct {
 	TagIds     []int
 }
 
+type CommentFromQueue struct {
+	PostUuid   uuid.UUID
+	CommentId  int
+	CreateDate time.Time
+	State      string
+}
+
+type DeletedCommentForQueue struct {
+	PostUuid  uuid.UUID
+	CommentId int
+}
+
 type PostInMongoDB struct {
 	ID         uuid.UUID `bson:"_id" json:"id"`
+	CreateDate time.Time `bson:"createDate" json:"createDate"`
+	State      string    `bson:"state" json:"state"`
+}
+
+type CommentInMongoDB struct {
+	ID         int       `bson:"_id" json:"id"`
 	CreateDate time.Time `bson:"createDate" json:"createDate"`
 	State      string    `bson:"state" json:"state"`
 }
@@ -100,10 +122,14 @@ func (s *MongoFeedService) StartSync() error {
 
 	err := s.kafkaConsumerService.SubscribeTopics(AllTopics)
 	if err != nil {
-		// trying to create topics
+		// trying to create topics and subscrube againg
 		errOfTopicsCreating := s.kafkaAdminService.CreateTopics(AllTopics, 1)
 		if errOfTopicsCreating != nil {
 			return errOfTopicsCreating
+		}
+		errOfSecondAttempt := s.kafkaConsumerService.SubscribeTopics(AllTopics)
+		if errOfSecondAttempt != nil {
+			return errOfSecondAttempt
 		}
 	}
 
@@ -186,9 +212,46 @@ func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
 			return err
 		}
 		return s.DeletePostAtFeeds(postUuid)
+	case NewCommentsTopic:
+		comment, err := parseMessageToComment(msg)
+		if err != nil {
+			return err
+		}
+		return s.StoreCommentAtFeeds(comment)
+	case UpdatedCommentsStatesTopic:
+		comment, err := parseMessageToComment(msg)
+		if err != nil {
+			return err
+		}
+		return s.UpdateCommentStateAtFeeds(comment)
+	case DeletedCommentsTopic:
+		comment, err := parseMessageToDeletedComment(msg)
+		if err != nil {
+			return err
+		}
+		return s.DeleteCommentAtFeeds(comment)
 	default:
 		return fmt.Errorf("unknown message Topic: %v", topic)
 	}
+}
+
+func (s *MongoFeedService) StoreCommentAtFeeds(comment *CommentFromQueue) error {
+	commentsCollectionName := s.GetCommentsCollectionNameByPost(comment.PostUuid.String())
+	err := s.storeCommentAtFeed(commentsCollectionName, comment.CommentId, comment.CreateDate, comment.State)
+	if err != nil && !mongo.IsDuplicateKeyError(errors.Cause(err)) {
+		log.Error(fmt.Sprintf("unable to store comment '%v' to collection '%v'", comment, commentsCollectionName), err.Error())
+		return err
+	}
+	return nil
+}
+
+func (s *MongoFeedService) UpdateCommentStateAtFeeds(comment *CommentFromQueue) error {
+	// TODO: find comment post by UUID and comment ID update the state to the new one
+	return nil
+}
+func (s *MongoFeedService) DeleteCommentAtFeeds(comment *DeletedCommentForQueue) error {
+	// TODO: find comment post by UUID and comment ID update the state to "DELETED"
+	return nil
 }
 
 func (s *MongoFeedService) StorePostAtFeeds(post *PostWithTagsFromQueue) error {
@@ -198,7 +261,7 @@ func (s *MongoFeedService) StorePostAtFeeds(post *PostWithTagsFromQueue) error {
 		return err
 	}
 
-	userFeedCollectionName := s.GetCollectionNameByUser(post.AuthorUuid)
+	userFeedCollectionName := s.GetPostsCollectionNameByUser(post.AuthorUuid)
 	err = s.storePostAtFeed(userFeedCollectionName, post.PostUuid, post.CreateDate, post.State)
 	if err != nil && !mongo.IsDuplicateKeyError(errors.Cause(err)) {
 		log.Error(fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", post.PostUuid, userFeedCollectionName), err.Error())
@@ -206,7 +269,7 @@ func (s *MongoFeedService) StorePostAtFeeds(post *PostWithTagsFromQueue) error {
 	}
 
 	for _, tagId := range post.TagIds {
-		tagFeedCollectionName := s.GetCollectionNameByTag(tagId)
+		tagFeedCollectionName := s.GetPostsCollectionNameByTag(tagId)
 		err := s.storePostAtFeed(tagFeedCollectionName, post.PostUuid, post.CreateDate, post.State)
 		if err != nil && !mongo.IsDuplicateKeyError(errors.Cause(err)) {
 			log.Error(fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", post.PostUuid, tagFeedCollectionName), err.Error())
@@ -244,12 +307,16 @@ func (s *MongoFeedService) DeletePostAtFeeds(postUuid uuid.UUID) error {
 	return nil
 }
 
-func (s *MongoFeedService) GetCollectionNameByTag(tagId int) string {
+func (s *MongoFeedService) GetPostsCollectionNameByTag(tagId int) string {
 	return fmt.Sprintf("%v%v", FeedByTagCollectionPrefix, tagId)
 }
 
-func (s *MongoFeedService) GetCollectionNameByUser(userUuid string) string {
+func (s *MongoFeedService) GetPostsCollectionNameByUser(userUuid string) string {
 	return fmt.Sprintf("%v%v", FeedByUserCollectionPrefix, userUuid)
+}
+
+func (s *MongoFeedService) GetCommentsCollectionNameByPost(postUuid string) string {
+	return fmt.Sprintf("%v%v", CommentsCollectionPrefix, postUuid)
 }
 
 func (s *MongoFeedService) GetFeed(state string, limit int, offset int) ([]string, error) {
@@ -258,13 +325,13 @@ func (s *MongoFeedService) GetFeed(state string, limit int, offset int) ([]strin
 }
 
 func (s *MongoFeedService) GetFeedByTag(tagId int, state string, limit int, offset int) ([]string, error) {
-	collectionName := s.GetCollectionNameByTag(tagId)
+	collectionName := s.GetPostsCollectionNameByTag(tagId)
 	filter := initFilter(state)
 	return s.getFeed(collectionName, filter, limit, offset)
 }
 
 func (s *MongoFeedService) GetFeedByUser(userUuid string, state string, limit int, offset int) ([]string, error) {
-	collectionName := s.GetCollectionNameByUser(userUuid)
+	collectionName := s.GetPostsCollectionNameByUser(userUuid)
 	filter := initFilter(state)
 	return s.getFeed(collectionName, filter, limit, offset)
 }
@@ -307,19 +374,34 @@ func (s *MongoFeedService) storePostAtFeed(collectionName string, uuid uuid.UUID
 	document := bson.D{{"_id", uuid}, {"createDate", createDate}, {"state", state}}
 	_, err := collection.InsertOne(ctx, document)
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", uuid, FeedCommonCollectionName))
+		return errors.Wrap(err, fmt.Sprintf("unable to store post with UUID '%v' to collection '%v'", uuid, collectionName))
+	}
+
+	return nil
+}
+
+func (s *MongoFeedService) storeCommentAtFeed(collectionName string, commentId int, createDate time.Time, state string) error {
+	collection := s.mongoService.GetCollection(s.mongoDbName, collectionName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.mongoService.QueryTimeout)
+	defer cancel()
+
+	document := bson.D{{"_id", commentId}, {"createDate", createDate}, {"state", state}}
+	_, err := collection.InsertOne(ctx, document)
+	if err != nil {
+		return errors.Wrap(err, fmt.Sprintf("unable to store comment with ID '%v' to collection '%v'", commentId, collectionName))
 	}
 
 	return nil
 }
 
 func parseMessageToPost(msg *kafka.Message) (*PostWithTagsFromQueue, error) {
-	var post *PostWithTagsFromQueue
-	err := json.Unmarshal([]byte(msg.Value), &post)
+	var result *PostWithTagsFromQueue
+	err := json.Unmarshal([]byte(msg.Value), &result)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse message '%v' to post", msg)
+		return nil, fmt.Errorf("unable to parse message '%v' to *PostWithTagsFromQueue", msg)
 	}
-	return post, nil
+	return result, nil
 }
 
 func parseMessageToUUID(msg *kafka.Message) (uuid.UUID, error) {
@@ -327,6 +409,24 @@ func parseMessageToUUID(msg *kafka.Message) (uuid.UUID, error) {
 	err := json.Unmarshal([]byte(msg.Value), &result)
 	if err != nil {
 		return result, fmt.Errorf("unable to parse message '%v' to uuid.UUID", msg)
+	}
+	return result, nil
+}
+
+func parseMessageToComment(msg *kafka.Message) (*CommentFromQueue, error) {
+	var result *CommentFromQueue
+	err := json.Unmarshal([]byte(msg.Value), &result)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse message '%v' to *CommentFromQueue", msg)
+	}
+	return result, nil
+}
+
+func parseMessageToDeletedComment(msg *kafka.Message) (*DeletedCommentForQueue, error) {
+	var result *DeletedCommentForQueue
+	err := json.Unmarshal([]byte(msg.Value), &result)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse message '%v' to *DeletedCommentForQueue", msg)
 	}
 	return result, nil
 }
