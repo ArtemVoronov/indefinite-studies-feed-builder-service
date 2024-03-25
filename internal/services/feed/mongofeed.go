@@ -60,9 +60,9 @@ type PostInMongoDB struct {
 }
 
 type CommentInMongoDB struct {
-	ID         int       `bson:"_id" json:"id"`
-	CreateDate time.Time `bson:"createDate" json:"createDate"`
-	State      string    `bson:"state" json:"state"`
+	ID         int       `bson:"_id" json:"Id"`
+	CreateDate time.Time `bson:"createDate" json:"CreateDate"`
+	State      string    `bson:"state" json:"State"`
 }
 
 type MongoFeedService struct {
@@ -319,24 +319,30 @@ func (s *MongoFeedService) GetCommentsCollectionNameByPost(postUuid string) stri
 	return fmt.Sprintf("%v%v", CommentsCollectionPrefix, postUuid)
 }
 
-func (s *MongoFeedService) GetFeed(state string, limit int, offset int) ([]string, error) {
+func (s *MongoFeedService) GetPostsFeed(state string, limit int, offset int) ([]string, error) {
 	filter := initFilter(state)
-	return s.getFeed(FeedCommonCollectionName, filter, limit, offset)
+	return s.getPostsFeed(FeedCommonCollectionName, filter, limit, offset)
 }
 
-func (s *MongoFeedService) GetFeedByTag(tagId int, state string, limit int, offset int) ([]string, error) {
+func (s *MongoFeedService) GetPostsFeedByTag(tagId int, state string, limit int, offset int) ([]string, error) {
 	collectionName := s.GetPostsCollectionNameByTag(tagId)
 	filter := initFilter(state)
-	return s.getFeed(collectionName, filter, limit, offset)
+	return s.getPostsFeed(collectionName, filter, limit, offset)
 }
 
-func (s *MongoFeedService) GetFeedByUser(userUuid string, state string, limit int, offset int) ([]string, error) {
+func (s *MongoFeedService) GetPostsFeedByUser(userUuid string, state string, limit int, offset int) ([]string, error) {
 	collectionName := s.GetPostsCollectionNameByUser(userUuid)
 	filter := initFilter(state)
-	return s.getFeed(collectionName, filter, limit, offset)
+	return s.getPostsFeed(collectionName, filter, limit, offset)
 }
 
-func (s *MongoFeedService) getFeed(collectionName string, filter any, limit int, offset int) ([]string, error) {
+func (s *MongoFeedService) GetCommentsFeedByPost(postUuid string, limit int, offset int) ([]CommentInMongoDB, error) {
+	collectionName := s.GetCommentsCollectionNameByPost(postUuid)
+	filter := emptyFilter()
+	return s.getCommentsFeed(collectionName, filter, limit, offset)
+}
+
+func (s *MongoFeedService) getPostsFeed(collectionName string, filter any, limit int, offset int) ([]string, error) {
 	limit64 := int64(limit)
 	offset64 := int64(offset)
 	collection := s.mongoService.GetCollection(s.mongoDbName, collectionName)
@@ -362,6 +368,30 @@ func (s *MongoFeedService) getFeed(collectionName string, filter any, limit int,
 	for _, post := range posts {
 		result = append(result, post.ID.String())
 	}
+	return result, nil
+}
+
+func (s *MongoFeedService) getCommentsFeed(collectionName string, filter any, limit int, offset int) ([]CommentInMongoDB, error) {
+	limit64 := int64(limit)
+	offset64 := int64(offset)
+	collection := s.mongoService.GetCollection(s.mongoDbName, collectionName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.mongoService.QueryTimeout)
+	defer cancel()
+
+	opts := options.Find().SetSkip(offset64).SetLimit(limit64).SetSort(bson.D{{"createDate", 1}})
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []CommentInMongoDB
+
+	err = cursor.All(ctx, &result)
+	if err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
 

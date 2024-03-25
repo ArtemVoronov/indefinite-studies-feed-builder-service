@@ -49,7 +49,8 @@ func createRestApi(logger *logrus.Logger) *gin.Engine {
 	v1 := router.Group("/api/v1")
 
 	v1.GET("/feed/ping", ping.Ping)
-	v1.GET("/feed", feedRestApi.GetFeed)
+	v1.GET("/feed/posts", feedRestApi.GetPostsFeed)
+	v1.GET("/feed/posts/:uuid/comments", feedRestApi.GetCommentsFeed)
 
 	authorized := router.Group("/api/v1")
 	authorized.Use(app.AuthReqired(authenicate))
