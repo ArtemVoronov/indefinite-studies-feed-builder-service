@@ -32,6 +32,8 @@ const FeedCommonCollectionName = "feed_all_posts"
 const FeedByTagCollectionPrefix = "feed_by_tag_"
 const FeedByUserCollectionPrefix = "feed_by_user_"
 const CommentsCollectionPrefix = "comments_by_post_"
+const PostsCollectionsPrefix = "feed_"
+const CommentsCollectionsPrefix = "comments_"
 
 type PostWithTagsFromQueue struct {
 	PostUuid   uuid.UUID
@@ -120,6 +122,7 @@ func (s *MongoFeedService) Shutdown() error {
 func (s *MongoFeedService) StartSync() error {
 	log.Debug("START FEED SYNC")
 
+	// TODO: it's not working, research the problem
 	err := s.kafkaConsumerService.SubscribeTopics(AllTopics)
 	if err != nil {
 		// trying to create topics and subscrube againg
@@ -235,25 +238,6 @@ func (s *MongoFeedService) processMessageByTopic(msg *kafka.Message) error {
 	}
 }
 
-func (s *MongoFeedService) StoreCommentAtFeeds(comment *CommentFromQueue) error {
-	commentsCollectionName := s.GetCommentsCollectionNameByPost(comment.PostUuid.String())
-	err := s.storeCommentAtFeed(commentsCollectionName, comment.CommentId, comment.CreateDate, comment.State)
-	if err != nil && !mongo.IsDuplicateKeyError(errors.Cause(err)) {
-		log.Error(fmt.Sprintf("unable to store comment '%v' to collection '%v'", comment, commentsCollectionName), err.Error())
-		return err
-	}
-	return nil
-}
-
-func (s *MongoFeedService) UpdateCommentStateAtFeeds(comment *CommentFromQueue) error {
-	// TODO: find comment post by UUID and comment ID update the state to the new one
-	return nil
-}
-func (s *MongoFeedService) DeleteCommentAtFeeds(comment *DeletedCommentForQueue) error {
-	// TODO: find comment post by UUID and comment ID update the state to "DELETED"
-	return nil
-}
-
 func (s *MongoFeedService) StorePostAtFeeds(post *PostWithTagsFromQueue) error {
 	err := s.storePostAtFeed(FeedCommonCollectionName, post.PostUuid, post.CreateDate, post.State)
 	if err != nil && !mongo.IsDuplicateKeyError(errors.Cause(err)) {
@@ -280,8 +264,8 @@ func (s *MongoFeedService) StorePostAtFeeds(post *PostWithTagsFromQueue) error {
 }
 
 func (s *MongoFeedService) UpdatePostStateAtFeeds(post *PostWithTagsFromQueue) error {
-	// TODO: iterate though all find post by UUID in all collections and update the state
-	collectionNames, err := s.mongoService.GetCollectionNames(s.mongoDbName)
+	filterForCollections := bson.D{{"name", bson.D{{"$regex", "^" + PostsCollectionsPrefix}}}}
+	collectionNames, err := s.mongoService.GetCollectionNames(s.mongoDbName, filterForCollections)
 	if err != nil {
 		return err
 	}
@@ -304,6 +288,31 @@ func (s *MongoFeedService) UpdatePostTagsAtFeeds(post *PostWithTagsFromQueue) er
 }
 func (s *MongoFeedService) DeletePostAtFeeds(postUuid uuid.UUID) error {
 	// TODO: find post by UUID in all collections and update the state to "DELETED"
+	return nil
+}
+
+func (s *MongoFeedService) StoreCommentAtFeeds(comment *CommentFromQueue) error {
+	commentsCollectionName := s.GetCommentsCollectionNameByPost(comment.PostUuid.String())
+	err := s.storeCommentAtFeed(commentsCollectionName, comment.CommentId, comment.CreateDate, comment.State)
+	if err != nil && !mongo.IsDuplicateKeyError(errors.Cause(err)) {
+		log.Error(fmt.Sprintf("unable to store comment '%v' to collection '%v'", comment, commentsCollectionName), err.Error())
+		return err
+	}
+	return nil
+}
+
+func (s *MongoFeedService) UpdateCommentStateAtFeeds(comment *CommentFromQueue) error {
+	commentsCollectionName := s.GetCommentsCollectionNameByPost(comment.PostUuid.String())
+
+	filter := bson.D{{"_id", comment.CommentId}}
+	update := bson.D{{"$set", bson.D{{"state", comment.State}}}}
+	s.mongoService.Update(s.mongoDbName, commentsCollectionName, filter, update)
+
+	return nil
+}
+
+func (s *MongoFeedService) DeleteCommentAtFeeds(comment *DeletedCommentForQueue) error {
+	// TODO: find comment post by UUID and comment ID update the state to "DELETED"
 	return nil
 }
 

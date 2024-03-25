@@ -1,7 +1,7 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240319140036-a53466828537 h1:tg7fRwtjcgwnTheCFz38unAttdHD5Te1NKawcn83ezI=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240319140036-a53466828537/go.mod h1:atU/Q+HCMICyi8wFioA3RSawjH/vT4xDgSnxUL5QUeM=
+github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240325063320-e20bde3c75d2 h1:J2PQ1mor88TVzFCc93wJ5C43L0FbpHCu6LfDaDJ41Lo=
+github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240325063320-e20bde3c75d2/go.mod h1:atU/Q+HCMICyi8wFioA3RSawjH/vT4xDgSnxUL5QUeM=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/actgardner/gogen-avro/v10 v10.1.0/go.mod h1:o+ybmVjEa27AAr35FRqU98DJu1fXES56uXniYFv4yDA=
 github.com/actgardner/gogen-avro/v10 v10.2.1/go.mod h1:QUhjeHPchheYmMDni/Nx7VB0RsT/ee8YIgGY/xpEQgQ=

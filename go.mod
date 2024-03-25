@@ -3,7 +3,7 @@ module github.com/ArtemVoronov/indefinite-studies-feed-builder-service
 go 1.21
 
 require (
-	github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240319140036-a53466828537
+	github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240325063320-e20bde3c75d2
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/gin-contrib/expvar v0.0.1
 	github.com/gin-gonic/gin v1.8.1
