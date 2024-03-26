@@ -119,21 +119,15 @@ func (s *MongoFeedService) Shutdown() error {
 	return nil
 }
 
+func (s *MongoFeedService) CreateRequiredTopics() error {
+	return s.kafkaAdminService.CreateTopics(AllTopics, 1)
+}
+
 func (s *MongoFeedService) StartSync() error {
 	log.Debug("START FEED SYNC")
-
-	// TODO: it's not working, research the problem
 	err := s.kafkaConsumerService.SubscribeTopics(AllTopics)
 	if err != nil {
-		// trying to create topics and subscrube againg
-		errOfTopicsCreating := s.kafkaAdminService.CreateTopics(AllTopics, 1)
-		if errOfTopicsCreating != nil {
-			return errOfTopicsCreating
-		}
-		errOfSecondAttempt := s.kafkaConsumerService.SubscribeTopics(AllTopics)
-		if errOfSecondAttempt != nil {
-			return errOfSecondAttempt
-		}
+		return err
 	}
 
 	s.kafkaConsumerService.StartReadingMessages(s.quit, s.msgChannel, s.errChannel, s.kafkaReadMessageTimeout)
@@ -175,8 +169,8 @@ func (s *MongoFeedService) startConsumingKafkaError() {
 			case <-s.quit:
 				log.Debug("kafka consumer quit")
 				return
-			case msg := <-s.errChannel:
-				log.Error("kafka consume error", msg.Error())
+			case errMsg := <-s.errChannel:
+				log.Error("kafka consume error", errMsg.Error())
 			}
 		}
 	}()
