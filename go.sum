@@ -1,9 +1,5 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240325063320-e20bde3c75d2 h1:J2PQ1mor88TVzFCc93wJ5C43L0FbpHCu6LfDaDJ41Lo=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240325063320-e20bde3c75d2/go.mod h1:atU/Q+HCMICyi8wFioA3RSawjH/vT4xDgSnxUL5QUeM=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240326084921-db87d18e858b h1:pjr/G0+c7w6S7xeD9tVApL898K7myVbHiAryefy2nT0=
-github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240326084921-db87d18e858b/go.mod h1:atU/Q+HCMICyi8wFioA3RSawjH/vT4xDgSnxUL5QUeM=
 github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240326095117-b1e997070b9c h1:Czg80nNOUbxzfxGE6YTZ5cT8AOv1rZY22kCIi08mCRY=
 github.com/ArtemVoronov/indefinite-studies-utils v0.0.0-20240326095117-b1e997070b9c/go.mod h1:atU/Q+HCMICyi8wFioA3RSawjH/vT4xDgSnxUL5QUeM=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
@@ -158,7 +154,6 @@ github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFSt
 github.com/pelletier/go-toml/v2 v2.0.1 h1:8e3L2cCQzLFi2CR4g7vGFuFxX7Jl1kKX8gW+iV0GUKU=
 github.com/pelletier/go-toml/v2 v2.0.1/go.mod h1:r9LEWfGN8R5k0VXJ+0BkIe7MYkRdwZOjgMj2KwnJFUo=
 github.com/pkg/diff v0.0.0-20210226163009-20ebb0f2a09e/go.mod h1:pJLUxLENpZxwdsKMEsNbx1VGcRFpLqf3715MtcvvzbA=
-github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

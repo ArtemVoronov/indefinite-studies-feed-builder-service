@@ -8,7 +8,6 @@ require (
 	github.com/gin-contrib/expvar v0.0.1
 	github.com/gin-gonic/gin v1.8.1
 	github.com/google/uuid v1.3.0
-	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.9.0
 	go.mongodb.org/mongo-driver v1.14.0
 )
