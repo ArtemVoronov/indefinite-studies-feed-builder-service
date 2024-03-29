@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/log"
+	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/db/entities"
 	kafkaService "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/kafka"
 	mongoUtils "github.com/ArtemVoronov/indefinite-studies-utils/pkg/services/mongo"
 	"github.com/ArtemVoronov/indefinite-studies-utils/pkg/utils"
@@ -17,6 +19,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+//TODO: add indexes to posts feeds
 
 const NewPostsTopic = "new_posts"
 const UpdatedPostsStatesTopic = "updated_posts_states"
@@ -265,20 +269,62 @@ func (s *MongoFeedService) UpdatePostStateAtFeeds(post *PostWithTagsFromQueue) e
 		filter := bson.D{{"_id", post.PostUuid}}
 		update := bson.D{{"$set", bson.D{{"state", post.State}}}}
 		s.mongoService.Update(s.mongoDbName, collectionName, filter, update)
-
 	}
 	return nil
 }
 
 func (s *MongoFeedService) UpdatePostTagsAtFeeds(post *PostWithTagsFromQueue) error {
-	// TODO: find post by UUID in all collections:
-	// TODO: if post exists in collection_by_tag but it is missed in new array of tags -> drop the post UUID from this collection
-	// TODO: if post exists in collection_by_tag but it is exists in new array of tags -> just set state
-	// TODO: if post missed in collection_by_tag but it is exists in new array of tags -> add post UUID to this collection
+	filterForCollections := bson.D{{"name", bson.D{{"$regex", "^" + FeedByTagCollectionPrefix}}}}
+	actualCollectionNames, err := s.mongoService.GetCollectionNames(s.mongoDbName, filterForCollections)
+	if err != nil {
+		return fmt.Errorf("unable to get collections: %w", err)
+	}
+
+	expectedCollectionNames := make([]string, len(post.TagIds))
+	for i, tagId := range post.TagIds {
+		expectedCollectionNames[i] = s.GetPostsCollectionNameByTag(tagId)
+	}
+
+	//if post exists in collection_by_tag but it is missed in new array of tags -> drop the post UUID from this collection
+	for _, collectionName := range actualCollectionNames {
+		if !slices.Contains(expectedCollectionNames, collectionName) {
+			filter := bson.D{{"_id", post.PostUuid}}
+			update := bson.D{{"$set", bson.D{{"state", entities.POST_STATE_DELETED}}}}
+			err := s.mongoService.Update(s.mongoDbName, collectionName, filter, update)
+			if err != nil {
+				return fmt.Errorf("unable to drop post %v in collection %v, error: %w", post, collectionName, err)
+			}
+		}
+	}
+
+	// if post exists in collection_by_tag but it is exists in new array of tags -> just set state
+	// if post missed in collection_by_tag but it is exists in new array of tags -> add post UUID to this collection
+	for _, collectionName := range expectedCollectionNames {
+		filter := bson.D{{"_id", post.PostUuid}}
+		update := bson.D{{"$set", bson.D{{"_id", post.PostUuid}, {"createDate", post.CreateDate}, {"state", post.State}}}}
+		s.mongoService.Upsert(s.mongoDbName, collectionName, filter, update)
+		if err != nil {
+			return fmt.Errorf("unable to upsert post %v in collection %v, error: %w", post, collectionName, err)
+		}
+	}
 	return nil
 }
+
 func (s *MongoFeedService) DeletePostAtFeeds(postUuid uuid.UUID) error {
-	// TODO: find post by UUID in all collections and update the state to "DELETED"
+	filter := bson.D{{"name", bson.D{{"$regex", "^" + PostsCollectionsPrefix}}}}
+	collectionNames, err := s.mongoService.GetCollectionNames(s.mongoDbName, filter)
+	if err != nil {
+		return fmt.Errorf("unable to get collections: %w", err)
+	}
+	for _, collectionName := range collectionNames {
+		filter := bson.D{{"_id", postUuid}}
+		update := bson.D{{"$set", bson.D{{"state", entities.POST_STATE_DELETED}}}}
+		err := s.mongoService.Update(s.mongoDbName, collectionName, filter, update)
+		if err != nil {
+			return fmt.Errorf("unable to delete post with UUID %v in collection %v, error: %w", postUuid, collectionName, err)
+		}
+
+	}
 	return nil
 }
 
@@ -292,17 +338,25 @@ func (s *MongoFeedService) StoreCommentAtFeeds(comment *CommentFromQueue) error 
 }
 
 func (s *MongoFeedService) UpdateCommentStateAtFeeds(comment *CommentFromQueue) error {
-	commentsCollectionName := s.GetCommentsCollectionNameByPost(comment.PostUuid.String())
+	collectionName := s.GetCommentsCollectionNameByPost(comment.PostUuid.String())
 
 	filter := bson.D{{"_id", comment.CommentId}}
 	update := bson.D{{"$set", bson.D{{"state", comment.State}}}}
-	s.mongoService.Update(s.mongoDbName, commentsCollectionName, filter, update)
+	s.mongoService.Update(s.mongoDbName, collectionName, filter, update)
 
 	return nil
 }
 
 func (s *MongoFeedService) DeleteCommentAtFeeds(comment *DeletedCommentForQueue) error {
-	// TODO: find comment post by UUID and comment ID update the state to "DELETED"
+	collectionName := s.GetCommentsCollectionNameByPost(comment.PostUuid.String())
+
+	filter := bson.D{{"_id", comment.CommentId}}
+	update := bson.D{{"$set", bson.D{{"state", entities.COMMENT_STATE_DELETED}}}}
+	err := s.mongoService.Update(s.mongoDbName, collectionName, filter, update)
+	if err != nil {
+		return fmt.Errorf("unable to delete comment with post UUID %v and ID %v in collection %v, error: %w", comment.PostUuid, comment.CommentId, collectionName, err)
+	}
+
 	return nil
 }
 
